@@ -1,0 +1,23 @@
+project:
+  name: trippilot
+  owner: Henry
+
+databricks:
+  catalog: trippilot_dev
+  schemas:
+    bronze: bronze
+    silver: silver
+    gold: gold
+  volumes:
+    source_files: /Volumes/trippilot_dev/bronze/source_files
+
+sources:
+  airbnb:
+    provider: insideairbnb
+    file_format: csv_gzip
+    snapshot_date: "2026-09-16"  
+    cities:
+      toronto:
+        enabled: true
+        raw_path: /Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/listings.csv.gz
+        required_identifier: id
