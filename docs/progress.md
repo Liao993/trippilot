@@ -28,6 +28,20 @@ Feature 1.1 — Inspect one city source
 - Snapshot/source date: "2026-09-17"
 - Key quality observations: No
 
-## Next task
+## Feature 1.2 status
 
-Feature 1.2 — Build one-city Bronze ingestion.
+| ID | Status | Branch/PR | Tested revision | Evidence | Next task |
+|---|---|---|---|---|---|
+| 1.2 | In progress | feature/1-2-airbnb-bronze |  | Databricks test and Bronze table verification | Record final row count and merge PR |
+
+## Bronze ingestion evidence
+
+- Source: Inside Airbnb
+- City: Toronto
+- Snapshot date: 2026-09-16
+- Raw path: `/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/listings.csv.gz`
+- Bronze table: `trippilot_dev.bronze.airbnb_listings_bronze`
+- Raw input rows: 22050
+- Bronze output rows: 22050
+- Run ID: af3fd5312cf44516b98ce7955449438d
+- Verification: Raw and Bronze row counts match; provenance columns populated.
