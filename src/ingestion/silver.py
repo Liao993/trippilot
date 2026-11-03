@@ -62,7 +62,21 @@ def is_valid_listing(
     # A missing, null, or blank ID cannot be trusted as a unique listing.
     return identifier is not None and str(identifier).strip() != ""
 
+def is_rejected_listing(listing_id: str | None) -> bool:
+    """
+    Determine whether a listing should be rejected from Silver.
 
+    A listing is rejected only when it has no usable identifier.
+    Missing prices or coordinates are quality issues, not rejection reasons.
+
+    Args:
+        listing_id: Raw or cleaned listing identifier.
+
+    Returns:
+        True when the listing cannot be reliably identified.
+    """
+    return listing_id is None or str(listing_id).strip() == ""
+    
 def deduplicate_listings(
     listings: list[dict[str, Any]],
     required_identifier: str = "id",
