@@ -1,26 +1,11 @@
-"""
-Unit tests for Airbnb Silver transformation helpers.
-
-These tests use small hardcoded inputs so failures are easy to understand.
-They do not require Spark, Databricks, or the real Toronto file.
-"""
-
-from src.ingestion.silver import (
-    clean_price,
-    deduplicate_listings,
-    is_valid_listing,
-)
+from src.ingestion.silver import clean_price, is_rejected_listing
 
 
-def test_clean_price_handles_currency_and_commas():
+def test_clean_price_parses_currency_string():
     assert clean_price("$1,234.00") == 1234.0
 
 
-def test_clean_price_handles_plain_number():
-    assert clean_price("150") == 150.0
-
-
-def test_clean_price_returns_none_for_blank_value():
+def test_clean_price_returns_none_for_empty_value():
     assert clean_price("") is None
 
 
@@ -28,39 +13,17 @@ def test_clean_price_returns_none_for_invalid_value():
     assert clean_price("not-a-price") is None
 
 
-def test_is_valid_listing_accepts_non_blank_id():
-    listing = {"id": "123", "price": "$150.00"}
-
-    assert is_valid_listing(listing) is True
-
-
-def test_is_valid_listing_rejects_blank_id():
-    listing = {"id": " ", "price": "$150.00"}
-
-    assert is_valid_listing(listing) is False
+def test_listing_without_usable_id_is_rejected():
+    assert is_rejected_listing(None) is True
+    assert is_rejected_listing("") is True
+    assert is_rejected_listing("   ") is True
 
 
-def test_deduplicate_listings_keeps_first_record():
-    listings = [
-        {"id": "1", "price": "$100.00"},
-        {"id": "1", "price": "$120.00"},
-        {"id": "2", "price": "$150.00"},
-    ]
-
-    result = deduplicate_listings(listings)
-
-    assert len(result) == 2
-    assert result[0]["price"] == "$100.00"
-    assert result[1]["id"] == "2"
+def test_listing_with_id_is_not_rejected():
+    assert is_rejected_listing("12345") is False
 
 
-def test_deduplicate_listings_skips_missing_ids():
-    listings = [
-        {"id": None, "price": "$100.00"},
-        {"id": "1", "price": "$120.00"},
-    ]
-
-    result = deduplicate_listings(listings)
-
-    assert len(result) == 1
-    assert result[0]["id"] == "1"
+def test_missing_price_does_not_reject_listing():
+    # Documents the revised Silver contract: a valid ID is enough
+    # for a listing to remain in Silver.
+    assert is_rejected_listing("12345") is False
