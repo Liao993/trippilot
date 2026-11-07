@@ -1,47 +1,60 @@
 silver_listings:
   table: trippilot_dev.silver.airbnb_listings
+  rejected_table: trippilot_dev.silver.airbnb_listings_rejected
+  quality_results_table: trippilot_dev.ops.quality_results
+
   business_key: id
+
   required_columns:
     - id
     - city
     - snapshot_date
+
   optional_columns:
     - price
     - currency
     - latitude
     - longitude
+
   rules:
     id:
       required: true
       type: string
       allow_empty: false
+
     city:
       required: true
       type: string
       allowed_values:
         - toronto
+
     snapshot_date:
       required: true
       type: date
       format: YYYY-MM-DD
+
     price:
       required: false
       type: decimal
       minimum: 0
+
     currency:
       required: false
       type: string
       allowed_values:
         - CAD
+
     latitude:
       required: false
       type: double
       minimum: -90
       maximum: 90
+
     longitude:
       required: false
       type: double
       minimum: -180
       maximum: 180
+
   duplicate_policy: keep_first
-  rejection_behavior: quarantine
+  rejection_behavior: rejected
