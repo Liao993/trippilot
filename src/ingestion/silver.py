@@ -7,6 +7,8 @@ These functions are intentionally small and testable without Spark.
 
 from typing import Any
 
+from src.contracts.validators import validate_listing
+
 
 def clean_price(value: str | None) -> float | None:
     """
@@ -24,7 +26,6 @@ def clean_price(value: str | None) -> float | None:
     if value is None:
         return None
 
-    # Remove currency symbols, commas, and surrounding whitespace.
     cleaned = (
         value
         .replace("$", "")
@@ -32,14 +33,12 @@ def clean_price(value: str | None) -> float | None:
         .strip()
     )
 
-    # An empty string is not a valid price.
     if cleaned == "":
         return None
 
     try:
         return float(cleaned)
     except ValueError:
-        # Do not guess. Return None so the record can be quarantined.
         return None
 
 
@@ -59,8 +58,8 @@ def is_valid_listing(
     """
     identifier = listing.get(required_identifier)
 
-    # A missing, null, or blank ID cannot be trusted as a unique listing.
     return identifier is not None and str(identifier).strip() != ""
+
 
 def is_rejected_listing(listing_id: str | None) -> bool:
     """
@@ -76,7 +75,25 @@ def is_rejected_listing(listing_id: str | None) -> bool:
         True when the listing cannot be reliably identified.
     """
     return listing_id is None or str(listing_id).strip() == ""
-    
+
+
+def get_rejection_reason(
+    listing: dict[str, Any],
+    rules: dict[str, Any],
+) -> str | None:
+    """
+    Return a short reason why a listing cannot enter Silver.
+
+    Returns None when the listing passes all checks.
+    """
+    errors = validate_listing(listing, rules)
+
+    if not errors:
+        return None
+
+    return "; ".join(errors)
+
+
 def deduplicate_listings(
     listings: list[dict[str, Any]],
     required_identifier: str = "id",
@@ -89,7 +106,7 @@ def deduplicate_listings(
 
     Args:
         listings: Bronze records represented as dictionaries.
-        required_identifier: Field used to identify a unique listing.
+        required_identifier: Field used to identify a unique listing ID.
 
     Returns:
         A list containing one record per unique listing ID.
@@ -100,11 +117,9 @@ def deduplicate_listings(
     for listing in listings:
         identifier = listing.get(required_identifier)
 
-        # Skip records without a usable identifier.
         if identifier is None or str(identifier).strip() == "":
             continue
 
-        # Convert to string so numeric and string IDs compare consistently.
         identifier_key = str(identifier).strip()
 
         if identifier_key in seen_ids:
@@ -114,3 +129,34 @@ def deduplicate_listings(
         unique_listings.append(listing)
 
     return unique_listings
+
+
+def separate_listings(
+    listings: list[dict[str, Any]],
+    rules: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Split listings into accepted and rejected groups.
+
+    Accepted listings can move to the Silver table.
+    Rejected listings should be saved in quarantine with a reason.
+
+    Args:
+        listings: Bronze records represented as dictionaries.
+        rules: Silver data rules loaded from the YAML contract.
+
+    Returns:
+        A tuple of (accepted listings, rejected listings).
+    """
+    accepted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+
+    for listing in listings:
+        reason = get_rejection_reason(listing, rules)
+
+        if reason is None:
+            accepted.append(listing)
+        else:
+            rejected.append({**listing, "rejection_reason": reason})
+
+    return accepted, rejected
