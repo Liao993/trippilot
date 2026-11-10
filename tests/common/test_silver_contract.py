@@ -1,7 +1,21 @@
 """Tests for Airbnb Silver data rules and rejection handling."""
+from pathlib import Path
+import sys
 
-from src.contracts.loader import get_table_rules, load_contract
-from src.ingestion.silver import (
+start = Path.cwd().resolve()
+ROOT = next(
+    (p for p in [start, *start.parents]
+     if (p / 'src').is_dir() and (p / 'config/project.yml').is_file()),
+    None,
+)
+if ROOT is None:
+    raise RuntimeError('Cannot locate repository root. Open this notebook inside the Databricks Git folder.')
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+print('Repository root:', ROOT)
+
+from src.quality.contract_loader import get_table_rules, load_contract
+from src.airbnb.transformations import (
     clean_price,
     deduplicate_listings,
     get_rejection_reason,
