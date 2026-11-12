@@ -1,5 +1,5 @@
-from datetime import date
 import re
+from datetime import date
 
 
 def write_snapshot(df, table, city, snapshot_date, city_col, snapshot_col):

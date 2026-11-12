@@ -1,6 +1,6 @@
 """Tests for Airbnb Silver data rules and rejection handling."""
-from pathlib import Path
 import sys
+from pathlib import Path
 
 start = Path.cwd().resolve()
 ROOT = next(
@@ -14,13 +14,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 print('Repository root:', ROOT)
 
-from src.quality.contract_loader import get_table_rules, load_contract
 from src.airbnb.transformations import (
     clean_price,
     deduplicate_listings,
     get_exclusion_reason,
     separate_listings,
 )
+from src.quality.contract_loader import get_table_rules, load_contract
 
 
 def test_clean_price_handles_common_formats():

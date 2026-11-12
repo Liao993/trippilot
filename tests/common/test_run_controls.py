@@ -4,8 +4,8 @@ Unit tests for ingestion rerun-control logic.
 These tests use small hardcoded inputs on purpose. They check exact rules
 without needing Databricks, Spark, a Volume, or real Airbnb data.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
 start = Path.cwd().resolve()
 ROOT = next(
