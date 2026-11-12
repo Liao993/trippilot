@@ -139,7 +139,7 @@ def separate_listings(
     Split listings into accepted and rejected groups.
 
     Accepted listings can move to the Silver table.
-    Rejected listings should be saved in quarantine with a reason.
+    Rejected listings should be saved in the rejected-records table with a reason.
 
     Args:
         listings: Bronze records represented as dictionaries.

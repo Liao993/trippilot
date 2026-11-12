@@ -8,7 +8,7 @@
 
 from pyspark.sql import SparkSession
 
-# Use the real catalog and schema recorded in Feature 1.1.
+# Use the real catalog and schema recorded in config/project.yml.
 CATALOG = "trippilot_dev"
 BRONZE_SCHEMA = "bronze"
 

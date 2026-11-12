@@ -2,7 +2,7 @@
 
 ## Current roadmap position (v28 Build Guide)
 
-**F02.2 / F02.3 — Isolated migration execution, recovery tests, and reconciliation. Status: Complete (runtime evidence below); PR merge pending.**
+**F02.2 / F02.3 — Isolated migration execution, recovery tests, and reconciliation. Status: Complete; merged into `main` via PR #11 (merge commit `c909a4f`, 2026-11-12).**
 
 F02.1 fixes are pushed (commit `f6d1420`: CI `run:` repair, Silver test alignment, this progress file). F02.2 implementation and runtime test-mode execution are complete; F02.3 reconciliation passed.
 
@@ -16,10 +16,11 @@ Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so
 - Current city: Toronto; snapshot date `2026-09-16`
 - Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-## Repository state (verified 2026-11-12)
+## Repository state (verified 2026-11-12, after PR #11 merge)
 
-- Repository: `Liao993/trippilot`, Git folder branch `chore/feature-1-foundation-migration`
-- Local HEAD `e64a9ae3cdef6e5881c58359dcedfa35ea232e3b`, equal to `origin/chore/feature-1-foundation-migration` as of the last fetch
+- Repository: `Liao993/trippilot`, Git folder branch `main`
+- Local HEAD `c909a4f04519bd0a86e56e89623995e268baa8f9` (merge of PR #11), equal to `origin/main` after the user's pull
+- F02 work merged via PR #11: commits `f6d1420` (F02.1 fixes), `7ff44b8` (F02.2 isolation), `46e7a19` (runtime evidence)
 - Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
 ## Verified F02.1 evidence (2026-11-12)
@@ -56,9 +57,9 @@ All notebook runs executed the committed code (branch `chore/feature-1-foundatio
 ## Remaining gaps / blockers
 
 - `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
-- PR merge and the GitHub Actions check still need user confirmation in the browser (push trigger covers `main`/`feature/add-ci` only).
+- GitHub Actions green on `main` (merge commit `c909a4f`) still needs confirmation in the browser (the push trigger covers `main` and `feature/add-ci`).
 - Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
 
 ## Next task
 
-Merge the PR for `chore/feature-1-foundation-migration`, confirm CI green on the exact merged commit, then start F03.
+Merge the documentation-alignment branch, confirm CI green on `main` (merge commit `c909a4f`), then start F03 per the v28 roadmap.
