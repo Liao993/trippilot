@@ -1,53 +1,40 @@
 # TripPilot progress
 
-## Current subfeature
+## Current roadmap position (v28 Build Guide)
 
-Feature 1.5.2 — Silver data rules, rejection tracking, and quality checks
+**F02.1 — Migration preflight and workspace validation. Status: In progress.**
 
-## Actual working environment and source paths
+Remaining for the F02.1 exit gate: commit and push the CI workflow fix and the test alignment fix, then confirm GitHub Actions passes lint and tests for the exact pushed commit (the workflow's push trigger covers `main` and `feature/add-ci` only, so a run on this branch needs a manual `workflow_dispatch` from the Actions tab or the pull-request check).
 
-- Databricks catalog: `trippilot_dev`
-- Bronze schema: `trippilot_dev.bronze`
-- Silver schema: `trippilot_dev.silver`
-- Source Volume: `/Volumes/trippilot_dev/bronze/source_files`
-- Airbnb source: Inside Airbnb
-- Current city: Toronto
-- Snapshot date: `2026-09-16`
-- Source file: `/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/listings.csv.gz`
+## Actual working environment and source paths (verified 2026-11-12)
 
-## Verified setup
+- Databricks catalog: `trippilot_dev` — schemas `bronze`, `silver`, `gold`, `ops` all present
+- Source Volume: managed Volume `trippilot_dev.bronze.source_files` at `/Volumes/trippilot_dev/bronze/source_files`
+- Source file: `/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/listings.csv.gz` — exists, 13,117,826 bytes
+- Current city: Toronto; snapshot date `2026-09-16`
+- Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-- The repository contains reusable Silver helpers in `src/ingestion/silver.py`.
-- The current code cleans Airbnb price strings, checks for a listing ID, and removes duplicate listing IDs.
-- The project configuration identifies Toronto as the first enabled city.
+## Repository state (verified 2026-11-12)
 
-## Subfeature status
+- Repository: `Liao993/trippilot`, Git folder branch `chore/feature-1-foundation-migration`
+- Local HEAD `e64a9ae3cdef6e5881c58359dcedfa35ea232e3b`, equal to `origin/chore/feature-1-foundation-migration` as of the last fetch
+- Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
-| ID | Status | Branch/PR | Tested revision | Evidence | Next task |
-|---|---|---|---|---|---|
-| 1.1 | In progress |  |  | Source configuration exists in `config/project.yml` | Confirm source fields and quality risks |
-| 1.2 | In progress | `feature/1.5.2-silver-governance` |  | Silver rules and validation helpers added | Add Bronze and Gold rules later |
-| 1.3 | In progress |  |  | Bronze ingestion helpers exist | Verify Bronze write in Databricks |
-| 1.4 | In progress |  |  | Run-control helper exists | Verify rerun behaviour in Databricks |
-| 1.5 | In progress | `feature/1.5.2-silver-governance` |  | Silver rules, rejection reasons, and separation logic added | Verify quarantine and quality results in Databricks |
+## Verified F02.1 evidence (2026-11-12)
 
-## Pipeline capability
+- CI workflow `.github/workflows/lint-test.yml`: the duplicated `run: run:` in the dependency-install step was corrected to a single `run:` key (pending commit).
+- Unit tests: 21 passed, 0 failed, 0 skipped, pytest exit code 0, executed on Databricks serverless compute against the Git folder working tree.
+- Test alignment: `tests/common/test_silver_contract.py` still imported the pre-rename `get_rejection_reason`; updated to `get_exclusion_reason` (current API in `src/airbnb/transformations.py`). The accepted-listing fixture now uses the post-`clean_price` decimal value `150.0` because `contracts/airbnb/silver_listings.yml` declares `price` as `type: decimal`. Assertions unchanged.
+- YAML validation: `config/project.yml`, `config/city_registry.yml`, `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml` all load via `yaml.safe_load`.
+- Tables inspected read-only (no writes): `bronze.airbnb_listings_bronze` 22,050 rows; `bronze.airbnb_ingestion_control` 1 row; `silver.airbnb_listings_silver` 22,050 rows; `silver.airbnb_listings_rejected` 0 rows; `ops.quality_results` 0 rows. Additional tables present: `bronze.airbnb_listings_bronze_test`, `ops.setup_verification`.
+- No Bronze/Silver write or destructive cell was executed during preflight.
 
-- Silver can identify listings that are missing required fields.
-- Silver can identify invalid numeric values, such as an impossible price or coordinate.
-- Silver can separate accepted listings from rejected listings.
-- Rejected listings will include a readable rejection reason.
-- Duplicate listing IDs are removed by keeping the first occurrence.
+## Remaining gaps / blockers
 
-## City coverage (actual validated count)
+- `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
+- GitHub Actions not yet re-verified for the pending CI fix commit (needs commit + push, then a green run for the exact commit).
+- Run IDs, Delta versions and source hash capture are F02.2/F02.3 evidence items, not yet collected.
 
-- Toronto: configured, not yet fully verified in Databricks.
+## Next task
 
-## Deferred work and reason
-
-- Gold metrics and reconciliation are deferred until the Silver quality checks are verified.
-- Databricks Job scheduling, alerting, and runbooks are deferred until the one-city pipeline is stable.
-
-## Blockers
-
-- None identified in the repository review.
+Commit and push the pending changes (CI workflow fix, test alignment) from the Databricks Git panel; confirm the GitHub Actions run for the exact commit; then complete the F02.1 exit-gate review before starting F02.2.
