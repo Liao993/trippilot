@@ -1,0 +1,19 @@
+bronze_listings:
+  table: trippilot_dev.bronze.airbnb_listings_bronze
+  source: insideairbnb
+  required_columns:
+    - id
+    - listing_url
+    - name
+    - host_id
+    - host_name
+    - neighbourhood_cleansed
+    - latitude
+    - longitude
+    - room_type
+    - price
+    - minimum_nights
+    - availability_365
+    - last_review
+  source_types: string
+  write_policy: replace_city_snapshot

@@ -1,12 +1,26 @@
 """Tests for Airbnb Silver data rules and rejection handling."""
+import sys
+from pathlib import Path
 
-from src.contracts.loader import get_table_rules, load_contract
-from src.ingestion.silver import (
+start = Path.cwd().resolve()
+ROOT = next(
+    (p for p in [start, *start.parents]
+     if (p / 'src').is_dir() and (p / 'config/project.yml').is_file()),
+    None,
+)
+if ROOT is None:
+    raise RuntimeError('Cannot locate repository root. Open this notebook inside the Databricks Git folder.')
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+print('Repository root:', ROOT)
+
+from src.airbnb.transformations import (
     clean_price,
     deduplicate_listings,
-    get_rejection_reason,
+    get_exclusion_reason,
     separate_listings,
 )
+from src.quality.contract_loader import get_table_rules, load_contract
 
 
 def test_clean_price_handles_common_formats():
@@ -22,7 +36,7 @@ def test_missing_id_is_rejected():
     table_rules = get_table_rules(rules, "silver_listings")
     listing = {"id": "", "city": "toronto", "snapshot_date": "2026-09-16"}
 
-    reason = get_rejection_reason(listing, table_rules)
+    reason = get_exclusion_reason(listing, table_rules)
 
     assert reason is not None
     assert "Missing required field: id" in reason
@@ -35,11 +49,13 @@ def test_valid_listing_is_accepted():
         "id": "123",
         "city": "toronto",
         "snapshot_date": "2026-09-16",
-        "price": "$150.00",
+        # Price reaches contract validation only after clean_price() has
+        # converted the raw Bronze string (e.g. "$150.00") into a decimal.
+        "price": 150.0,
         "currency": "CAD",
     }
 
-    reason = get_rejection_reason(listing, table_rules)
+    reason = get_exclusion_reason(listing, table_rules)
 
     assert reason is None
 

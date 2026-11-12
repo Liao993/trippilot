@@ -1,12 +1,12 @@
 silver_listings:
-  table: trippilot_dev.silver.airbnb_listings
-  rejected_table: trippilot_dev.silver.airbnb_listings_rejected
+  table: trippilot_dev.silver.airbnb_listings_silver
+  exclusion_table: trippilot_dev.ops.exclusion
   quality_results_table: trippilot_dev.ops.quality_results
 
-  business_key: id
+  business_key: [listing_id, city, snapshot_date]
 
   required_columns:
-    - id
+    - listing_id
     - city
     - snapshot_date
 
@@ -41,8 +41,7 @@ silver_listings:
     currency:
       required: false
       type: string
-      allowed_values:
-        - CAD
+      allowed_values: [CAD]
 
     latitude:
       required: false
@@ -56,5 +55,6 @@ silver_listings:
       minimum: -180
       maximum: 180
 
-  duplicate_policy: keep_first
-  rejection_behavior: rejected
+  duplicate_policy: latest_bronze_then_content_hash
+  exclusion_behavior: missing_identifier
+  promotion_behavior: block_on_remaining_contract_errors
