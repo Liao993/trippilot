@@ -1,10 +1,10 @@
 # TripPilot progress
 
-## Current roadmap position (v28 Build Guide)
+## Current roadmap position (v29 Build Guide)
 
-**F03.3 — Merge protection and delivery readiness. Status: Complete on `feature/f03-3-merge-protection`; PR pending (see F03.3 evidence below).**
+**F04.1 — Source manifest and provenance contract. Status: Complete on `feature/f04-1-source-manifest`; PR pending (see F04.1 evidence below).**
 
-F02, F03.1 and F03.2 are fully closed: PR #11 (F02 runtime, merge `c909a4f`), PR #12 (v28 docs alignment, merge `2a4c24f`), PR #13 (F03.1 CI baseline, merge `a041d01`) and PR #14 (F03.2 validation, merge `58b4da7`, Actions run #43355393517 — both jobs green) are all merged into `main`.
+The F03 foundation is fully closed: PR #11 (`c909a4f`), PR #12 (`2a4c24f`), PR #13 (`a041d01`) and PR #14 (`58b4da7`) are merged, and F03.3 (merge protection and delivery readiness) merged as PR #15 → `a924126`.
 
 Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so CI for this branch runs via the pull-request check or a manual `workflow_dispatch` from the Actions tab.
 
@@ -16,10 +16,10 @@ Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so
 - Current city: Toronto; snapshot date `2026-09-16`
 - Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-## Repository state (verified 2026-11-13, start of F03.3)
+## Repository state (verified 2026-11-13, start of F04.1)
 
-- Repository: `Liao993/trippilot` (public), Git folder branch `feature/f03-3-merge-protection` (based on `main` at `58b4da7`, merge of PR #14 / F03.2), clean tree
-- `main` confirmed on origin at `58b4da7`; Actions run #43355393517 on the merge commit shows both jobs green (`Lint and unit tests`, `Secret scan (Gitleaks)`); `main` branch protection not yet configured (the key F03.3 gap)
+- Repository: `Liao993/trippilot` (public), Git folder branch `feature/f04-1-source-manifest` (based on `main` at `a924126`, merge of PR #15 / F03.3), clean tree
+- `main` confirmed on origin at `a924126`; F03.3 closed the F03 foundation (branch protection on `main` configured by the maintainer per the delivered T01 steps; PR #15 merged with both checks green)
 - Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
 ## Verified F02.1 evidence (2026-11-12)
@@ -98,15 +98,26 @@ Scope per the v28 runbook (F03.3-T01 to T03): require CI before merge, standardi
 - T02 (evidence convention): F03.2 record reconciled (PR #14, merge `58b4da7`, run #43355393517, both jobs green — header and roadmap position above); reusable evidence template added as the section above this one.
 - T03 (deployment readiness): decision — **Deferred, prerequisites unavailable**. Evidence (inspected 2026-11-13): (1) the workspace has no service principals (SCIM list returns 0), so no non-interactive M2M authentication exists for GitHub Actions and no GitHub secret holds a Databricks credential; (2) the repository contains no Databricks bundle or deployment definition (`git ls-files` shows none); (3) no separate non-production deployment target exists — the only workspace is the development workspace where the Git folder already syncs the code. Nothing was deployed, no workflow YAML was added, and no credentials were created or committed. Reopen when: a service principal with an OAuth secret stored in GitHub Actions secrets, a defined non-production deployment target, and a minimal validated bundle (dry run) are available.
 - Regression confirmation (no Python changed): `ruff check src tests` exit 0; `ruff format --check src tests` exit 0; `python -m src.quality.config_validation` exit 0; `python -m src.quality.notebook_validation` exit 0; `python -m pytest tests` 88 passed.
-- This PR's own PR/merge/Actions evidence (PR URL, tested SHA, merge SHA, run URL) is recorded below after merge.
+- Merged after both required checks were green: PR #15 → merge `a924126` (tested commit `6177650`). The branch-protection rule on `main` was configured by the maintainer per the delivered T01 steps.
+
+## F04.1 implementation and evidence (2026-11-13, complete; PR pending)
+
+Scope per the v29 runbook (F04.1-T01/T02): a metadata/contract subfeature — manifest contract, pure-Python validation and state rules. No downloads, no Bronze writes, no changes to the existing Airbnb raw path. Status: Verified locally.
+
+- T01 (manifest contract): new `contracts/ops/source_file_manifest.yml` (the first populated ops contract) defines all 17 manifest fields with types and nullability, the four controlled states (registered/validated/landed/failed), valid transitions (registered→validated→landed; failed and landed terminal), seven supported file types and the 2-GiB size limit. Deterministic identity: `source_file_id` = SHA-256 over `source_family|source_entity_id|source_version|file_type|file_hash_sha256`, so an exact same-file retry is idempotent while a corrected hash creates a new immutable record.
+- T02 (validation): new `src/common/source_manifest.py` (pure Python — no Spark, Volume or network): file checks (exists, regular, non-empty, size limit, supported type), streamed SHA-256 of the exact bytes, metadata validation (required fields incl. license/attribution/source identity, ISO-8601 UTC timestamp, hash format, https source_url, /Volumes/ landing path), state-transition rules returning immutable record copies, and sanitized failure messages (credential patterns redacted). Run IDs reuse `src.common.provenance.build_run_id` — no competing helper.
+- CI integration: `src/quality/config_validation.py` validates the manifest contract as a fifth populated file (states, transitions, file types, max size, required + optional fields); the two tmp-path config tests were extended accordingly.
+- Tests: `tests/common/test_source_manifest.py` — 26 tests (valid record, hash stability and change, deterministic ID, missing/dir/empty/oversized/unsupported files, missing license/attribution/entity, invalid timestamp/hash/URL, full transition chain, rejected skip and terminal transitions, failed requires + sanitizes the message, landing-path rules, new record must start registered, YAML↔module consistency). `tests/quality/test_config_validation.py` — 8 new positive/negative contract tests.
+- Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (30 files); `python -m src.quality.config_validation` exit 0 (five files); `python -m src.quality.notebook_validation` exit 0; `python -m pytest tests` 124 passed (was 88; +36). No Spark, network, production table or credential used.
+- Defect caught during verification: the first draft rejected every valid record with "Missing required manifest field: byte_size" (required-field loop treated the integer field as a string); fixed by special-casing byte_size. Three Ruff findings (redundant Z replacement, join vs f-string, ValueError vs TypeError) also corrected.
+- Databricks/runtime verification: none for this subfeature (metadata only, by design).
 
 ## Remaining gaps / blockers
 
 - `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
-- `main` branch protection: the rule (required PR + the two required status checks) is configured by the maintainer in GitHub Settings and verified in this PR's merge box before merging; record the result here and in the Notion page.
-- F03.3 PR/merge evidence (PR URL, tested SHA, merge SHA, Actions run URL) to be recorded after merge.
+- F04.1 PR/merge evidence (PR URL, tested SHA, merge SHA, Actions run URL) to be recorded after merge, here and in the Notion page.
 - Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
 
 ## Next task
 
-First configure the `main` branch protection rule (steps delivered with F03.3), then open the pull request for `feature/f03-3-merge-protection` → `main`; confirm the required checks gate the merge box, merge after both are green, record the PR URL, tested SHA, merge SHA and Actions run here and in the Notion page, then switch the Git folder back to `main` and pull. That closes the F03 foundation. Next per the v28 roadmap: F04 — Shared source acquisition, manifest and raw landing framework.
+Open the pull request for `feature/f04-1-source-manifest` → `main`, confirm both required checks are green on the PR commit, merge, record the PR URL, tested SHA, merge SHA and Actions run here and in the Notion page, then switch the Git folder back to `main` and pull. Next per the v29 roadmap: F04.2 — Raw acquisition, validation and immutable landing.

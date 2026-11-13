@@ -16,12 +16,14 @@ from src.quality.contract_loader import get_table_rules, load_contract
 
 # The populated files this validation covers, mapped to their validators.
 # Placeholder files (config/alerts.yml, config/jobs.yml, config/model.yml,
-# config/slos.yml and the empty operational contracts) are not listed.
+# config/slos.yml and the empty operational contracts exclusion.yml,
+# pipeline_runs.yml and quality_results.yml) are not listed.
 CONFIG_FILES: dict[str, str] = {
     "config/project.yml": "project",
     "config/city_registry.yml": "city_registry",
     "contracts/airbnb/bronze_listings.yml": "bronze_contract",
     "contracts/airbnb/silver_listings.yml": "silver_contract",
+    "contracts/ops/source_file_manifest.yml": "source_manifest_contract",
 }
 
 
@@ -152,11 +154,113 @@ def validate_silver_contract(
     return errors
 
 
+MANIFEST_REQUIRED_FIELDS = (
+    "source_file_id",
+    "source_family",
+    "source_entity_id",
+    "source_version",
+    "file_type",
+    "source_url",
+    "retrieved_at_utc",
+    "file_hash_sha256",
+    "byte_size",
+    "schema_version",
+    "license",
+    "attribution",
+    "source_path",
+    "run_id",
+    "processing_state",
+)
+MANIFEST_OPTIONAL_FIELDS = ("landing_path", "error_message")
+MANIFEST_CONTROLLED_STATES = ("registered", "validated", "landed", "failed")
+
+
+def validate_source_manifest_contract(
+    content: dict[str, Any],
+    label: str = "contracts/ops/source_file_manifest.yml",
+) -> list[str]:
+    """Check the states, transitions, file types and fields of the manifest contract."""
+    errors: list[str] = []
+
+    states = content.get("states")
+    if not _is_nonempty_string_list(states):
+        errors.append(f"{label}: 'states' must be a non-empty list of strings")
+        states = []
+    else:
+        for state in MANIFEST_CONTROLLED_STATES:
+            if state not in states:
+                errors.append(
+                    f"{label}: 'states' must contain the controlled state {state!r}"
+                )
+
+    transitions = content.get("valid_transitions")
+    if not isinstance(transitions, dict) or len(transitions) == 0:
+        errors.append(f"{label}: 'valid_transitions' must be a non-empty mapping")
+    else:
+        for from_state, to_states in transitions.items():
+            if from_state not in states:
+                errors.append(
+                    f"{label}: 'valid_transitions' key {from_state!r} is not a known state"
+                )
+            if not isinstance(to_states, list):
+                errors.append(
+                    f"{label}: 'valid_transitions.{from_state}' must be a list of states"
+                )
+                continue
+            for to_state in to_states:
+                if to_state not in states:
+                    errors.append(
+                        f"{label}: 'valid_transitions.{from_state}' names unknown "
+                        f"state {to_state!r}"
+                    )
+
+    if not _is_nonempty_string_list(content.get("supported_file_types")):
+        errors.append(
+            f"{label}: 'supported_file_types' must be a non-empty list of strings"
+        )
+
+    max_byte_size = content.get("max_byte_size")
+    if (
+        isinstance(max_byte_size, bool)
+        or not isinstance(max_byte_size, int)
+        or max_byte_size <= 0
+    ):
+        errors.append(f"{label}: 'max_byte_size' must be a positive integer")
+
+    fields = content.get("fields")
+    if not isinstance(fields, dict) or len(fields) == 0:
+        errors.append(f"{label}: 'fields' must be a non-empty mapping")
+        return errors
+
+    for field in MANIFEST_REQUIRED_FIELDS:
+        entry = fields.get(field)
+        if not isinstance(entry, dict):
+            errors.append(f"{label}: 'fields.{field}' must be a mapping")
+            continue
+        if entry.get("required") is not True:
+            errors.append(f"{label}: 'fields.{field}.required' must be true")
+        if not _is_nonempty_string(entry.get("type")):
+            errors.append(f"{label}: 'fields.{field}.type' must be a non-empty string")
+
+    for field in MANIFEST_OPTIONAL_FIELDS:
+        entry = fields.get(field)
+        if not isinstance(entry, dict):
+            errors.append(f"{label}: 'fields.{field}' must be a mapping")
+            continue
+        if entry.get("required") is not False:
+            errors.append(f"{label}: 'fields.{field}.required' must be false")
+        if not _is_nonempty_string(entry.get("type")):
+            errors.append(f"{label}: 'fields.{field}.type' must be a non-empty string")
+
+    return errors
+
+
 VALIDATORS = {
     "project": validate_project_config,
     "city_registry": validate_city_registry,
     "bronze_contract": validate_bronze_contract,
     "silver_contract": validate_silver_contract,
+    "source_manifest_contract": validate_source_manifest_contract,
 }
 
 
@@ -199,7 +303,7 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
 
 
 def main() -> None:
-    """Validate the four populated files from the repository root."""
+    """Validate the five populated files from the repository root."""
     validate_config_files()
     print("All populated YAML configuration and contract files are valid.")
 
