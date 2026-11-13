@@ -2,9 +2,9 @@
 
 ## Current roadmap position (v28 Build Guide)
 
-**F03.1 — CI baseline and developer checks. Status: Complete on `feature/f03-1-ci-baseline`; PR pending (see F03.1 evidence below).**
+**F03.2 — Contract, fixture, notebook, dependency and secret validation. Status: Complete on `feature/f03-2-validation-security`; PR pending (see F03.2 evidence below).**
 
-F02 is fully closed: PR #11 (F02 runtime work, merge `c909a4f`) and PR #12 (v28 docs alignment, merge `2a4c24f`) are both merged into `main`; the user confirmed the main-branch CI run passed on `2a4c24f`.
+F02 and F03.1 are fully closed: PR #11 (F02 runtime work, merge `c909a4f`), PR #12 (v28 docs alignment, merge `2a4c24f`) and PR #13 (F03.1 CI baseline, merge `a041d01`) are all merged into `main`.
 
 Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so CI for this branch runs via the pull-request check or a manual `workflow_dispatch` from the Actions tab.
 
@@ -16,10 +16,10 @@ Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so
 - Current city: Toronto; snapshot date `2026-09-16`
 - Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-## Repository state (verified 2026-11-13, start of F03.1)
+## Repository state (verified 2026-11-13, start of F03.2)
 
-- Repository: `Liao993/trippilot`, Git folder branch `feature/f03-1-ci-baseline` (based on `main` at `2a4c24f`, merge of PR #12), clean tree
-- `main` confirmed on origin at `2a4c24f` after PR #11 (`c909a4f`, F02 runtime work) and PR #12 (v28 docs alignment, commit `f1bc087`)
+- Repository: `Liao993/trippilot`, Git folder branch `feature/f03-2-validation-security` (based on `main` at `a041d01`, merge of PR #13 / F03.1), clean tree
+- `main` confirmed on origin at `a041d01` after PR #11 (`c909a4f`), PR #12 (`2a4c24f`) and PR #13 (F03.1 CI baseline, commit `137255f`)
 - Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
 ## Verified F02.1 evidence (2026-11-12)
@@ -64,12 +64,27 @@ Scope per the v28 runbook: extend the existing CI workflow only — no new CI sy
 - Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (25 files formatted); `python -m src.quality.config_validation` exit 0 ("All populated YAML configuration and contract files are valid."); `python -m pytest tests` 53 passed.
 - Negative-path evidence: with `silver_listings.rules` emptied, the validator exits 1 with `contracts/airbnb/silver_listings.yml: 'silver_listings.rules' must be a non-empty mapping`; the real file was then restored and revalidated clean.
 
+## F03.2 implementation and evidence (2026-11-13, complete)
+
+Scope per the v28 runbook (F03.2-T01 to T03): contract-driven fixture tests, static notebook/source validation, and dependency/secret scanning — no CI system change beyond extending `lint-test.yml`, no Databricks runtime work.
+
+- T01 (contract-driven tests): populated the empty `tests/quality/test_exclusion.py` placeholder with 13 fixture tests (inline-dict convention) driving `record_validation.validate_listing` / `exclusion.get_exclusion_reason` against the real Silver contract rules — boundary values (price 0, latitude ±90, longitude ±180), missing required fields, unparseable price, out-of-range coordinates, disallowed `city`/`currency`, joined multi-error reasons, and the `validate_listing` return shape. New `tests/airbnb/test_ingestion.py` adds 11 service-contract tests for `ingestion.write_snapshot` using a recording `DataFrameWriter` stub: happy path (delta format, overwrite mode, `replaceWhere` predicate, `saveAsTable` last), unsafe city (uppercase, SQL-injection string), non-ISO date, 2-/4-part and unsafe-identifier table names, unsafe column names, and the hyphenated-city boundary that must stay allowed.
+- T02 (notebook/source validation): new `src/quality/notebook_validation.py` validates `.ipynb` JSON structure (nbformat >= 4, non-empty cells, valid cell types, string-or-list sources) and `ast.parse`s every non-magic code cell (cells starting with `%`/`!` are skipped); plain `.py` files under `notebooks/` are syntax-checked. Errors name the file and cell. CLI: `python -m src.quality.notebook_validation`. `tests/quality/test_notebook_validation.py` adds 12 tests (valid/invalid notebooks and `.py` via `tmp_path`, magic-cell skip, negative JSON, plus one run over the real repo).
+  - Real catch: on its first run over the repository the validator found `notebooks/ops/investigate_silver_quality.ipynb` cell 0 beginning with a stray backtick before a `#` comment (invalid Python). The notebook was fixed (single character removed); the test was not weakened.
+- T03 (dependency + secret scans): new `requirements.txt` declares the CI tools (`ruff`, `pytest`, `pyyaml`); the workflow install step now uses `pip install -r requirements.txt` and a new step runs `pip-audit --requirement requirements.txt`. A new `secret-scan` job uses `gitleaks/gitleaks-action@v3` (current major; v2's Node 20 runtime is being removed from runners) with a full-history checkout (`fetch-depth: 0`); no `GITLEAKS_LICENSE` needed (personal-account repo per the action README).
+  - pip-audit finding reviewed and resolved: the preinstalled pytest 8.4.2 is affected by `PYSEC-2026-1845` (fixed in 9.0.3). The suite passes under pytest 9.0.3 and 9.2.0 (88 passed each), so `requirements.txt` pins `pytest>=9.0.3` with the advisory documented in a comment. No suppressions used.
+  - Local Gitleaks evidence: gitleaks 8.30.1 CLI scanned all 24 commits (~261 KB), no leaks, exit 0 (run redacted).
+  - Local pip-audit note: full `-r` mode needs a virtualenv, which the Databricks serverless sandbox cannot create (no `ensurepip`); the scan was verified locally with the three tools pinned at installed versions in `--no-deps --disable-pip` mode (clean after the pytest floor), and the authoritative run executes on the GitHub runner via the PR check.
+- Workflow: all F03.1 checks preserved; new steps in order — notebook validation after YAML validation, pip-audit before pytest; second job `secret-scan`. `actions/checkout@v6` is used in the new job per the gitleaks-action v3 migration notes; the proven-green lint job keeps its existing checkout version.
+- Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (28 files formatted); `python -m src.quality.config_validation` exit 0; `python -m src.quality.notebook_validation` exit 0 ("All notebook and source files under notebooks/ are valid."); pip-audit (pinned local mode) clean; gitleaks clean; `python -m pytest tests` 88 passed (was 53; +35).
+- Negative-path evidence: with a broken notebook in a temp root, `python -m src.quality.notebook_validation` exits 1 naming file, cell and syntax error.
+
 ## Remaining gaps / blockers
 
 - `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
-- CI green on `main` was confirmed by the user for `2a4c24f` (runbook F03.1-T01). The four-check CI run on this branch's pull request still needs confirmation in the browser.
+- CI green on `main` was confirmed by the user for `2a4c24f` (F03.1-T01), and PR #13's checks passed before its merge. The full check run on this branch's pull request (lint, format, YAML validation, notebook validation, pip-audit, unit tests, plus the Gitleaks secret-scan job) still needs confirmation in the browser.
 - Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
 
 ## Next task
 
-Open the pull request for `feature/f03-1-ci-baseline` → `main`, confirm the Checks tab shows all four checks (lint, format, YAML validation, tests) green on the PR commit, merge, then continue with the next F03 subfeature per the v28 roadmap.
+Open the pull request for `feature/f03-2-validation-security` → `main`, confirm the Checks tab shows all checks green (lint, format, YAML validation, notebook validation, pip-audit, unit tests, and the secret-scan job) on the PR commit, merge, then continue with the next F03 subfeature per the v28 roadmap.
