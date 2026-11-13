@@ -1,0 +1,112 @@
+# Source-file manifest contract (F04.1).
+# One immutable manifest record per acquired source file: source
+# identity + version + file type + content hash. An exact same-file
+# retry resolves to the same source_file_id (idempotent). A corrected
+# file with a different SHA-256 creates a NEW record; prior records
+# are never overwritten or mutated.
+table: trippilot_dev.ops.source_file_manifest
+
+# Controlled processing states for a manifest record.
+states:
+  - registered
+  - validated
+  - landed
+  - failed
+
+# Allowed state transitions. The success path is
+# registered -> validated -> landed. failed is terminal: a retry of the
+# same bytes is idempotent (same source_file_id) and a corrected file
+# becomes a new immutable record.
+valid_transitions:
+  registered: [validated, failed]
+  validated: [landed, failed]
+  landed: []
+  failed: []
+
+# Canonical file-type labels accepted by acquisition.
+supported_file_types:
+  - csv
+  - csv.gz
+  - tsv
+  - json
+  - geojson
+  - zip
+  - parquet
+
+# Maximum accepted source-file size in bytes (2 GiB).
+max_byte_size: 2147483648
+
+fields:
+  source_file_id:
+    type: string
+    required: true
+    description: >-
+      Deterministic ID: SHA-256 over
+      "source_family|source_entity_id|source_version|file_type|file_hash_sha256".
+      Same identity, version, type and bytes always resolve to the same ID.
+  source_family:
+    type: string
+    required: true
+    description: Source family, for example insideairbnb.
+  source_entity_id:
+    type: string
+    required: true
+    description: City, agency, document or other source entity ID.
+  source_version:
+    type: string
+    required: true
+    description: Snapshot, release or document version.
+  file_type:
+    type: string
+    required: true
+    description: Canonical format label from supported_file_types.
+  source_url:
+    type: string
+    required: true
+    description: Official source URL (https:// or http://), not a guessed download URL.
+  retrieved_at_utc:
+    type: string
+    required: true
+    description: ISO-8601 UTC timestamp, for example 2026-11-13T18:00:00Z.
+  file_hash_sha256:
+    type: string
+    required: true
+    description: SHA-256 hex digest of the exact source bytes.
+  byte_size:
+    type: integer
+    required: true
+    description: File size in bytes; must be a positive integer.
+  schema_version:
+    type: string
+    required: true
+    description: Source schema or release identifier; use pending until inspected.
+  license:
+    type: string
+    required: true
+    description: Licence or terms identifier.
+  attribution:
+    type: string
+    required: true
+    description: Required attribution text or instruction.
+  source_path:
+    type: string
+    required: true
+    description: Incoming or local source path used for acquisition.
+  landing_path:
+    type: string
+    required: false
+    description: Immutable Unity Catalog Volume path (starts with /Volumes/) set when landed.
+  run_id:
+    type: string
+    required: true
+    description: Unique acquisition run ID from src/common/provenance.build_run_id.
+  processing_state:
+    type: string
+    required: true
+    description: One of the controlled states above.
+  error_message:
+    type: string
+    required: false
+    description: >-
+      Sanitized failure explanation, required when the state is failed;
+      credentials are redacted and never appear in the message.

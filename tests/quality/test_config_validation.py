@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
 print("Repository root:", ROOT)
 
 import pytest
+import yaml
 
 from src.quality.config_validation import (
     validate_bronze_contract,
@@ -32,6 +33,7 @@ from src.quality.config_validation import (
     validate_config_files,
     validate_project_config,
     validate_silver_contract,
+    validate_source_manifest_contract,
 )
 
 PROJECT_CONFIG = {
@@ -76,6 +78,37 @@ SILVER_CONTRACT = {
             "price": {"required": False, "type": "decimal", "minimum": 0},
         },
     }
+}
+
+MANIFEST_CONTRACT = {
+    "states": ["registered", "validated", "landed", "failed"],
+    "valid_transitions": {
+        "registered": ["validated", "failed"],
+        "validated": ["landed", "failed"],
+        "landed": [],
+        "failed": [],
+    },
+    "supported_file_types": ["csv", "csv.gz", "parquet"],
+    "max_byte_size": 2147483648,
+    "fields": {
+        "source_file_id": {"type": "string", "required": True},
+        "source_family": {"type": "string", "required": True},
+        "source_entity_id": {"type": "string", "required": True},
+        "source_version": {"type": "string", "required": True},
+        "file_type": {"type": "string", "required": True},
+        "source_url": {"type": "string", "required": True},
+        "retrieved_at_utc": {"type": "string", "required": True},
+        "file_hash_sha256": {"type": "string", "required": True},
+        "byte_size": {"type": "integer", "required": True},
+        "schema_version": {"type": "string", "required": True},
+        "license": {"type": "string", "required": True},
+        "attribution": {"type": "string", "required": True},
+        "source_path": {"type": "string", "required": True},
+        "landing_path": {"type": "string", "required": False},
+        "run_id": {"type": "string", "required": True},
+        "processing_state": {"type": "string", "required": True},
+        "error_message": {"type": "string", "required": False},
+    },
 }
 
 
@@ -188,6 +221,73 @@ def test_silver_non_mapping_rule_is_reported():
     assert "silver_listings.rules.id" in errors[0]
 
 
+def test_valid_manifest_contract_passes():
+    assert validate_source_manifest_contract(MANIFEST_CONTRACT) == []
+
+
+def test_manifest_contract_missing_field_is_reported():
+    fields = {k: v for k, v in MANIFEST_CONTRACT["fields"].items() if k != "license"}
+    broken = {**MANIFEST_CONTRACT, "fields": fields}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("fields.license" in error for error in errors)
+
+
+def test_manifest_contract_required_field_must_be_required():
+    fields = dict(MANIFEST_CONTRACT["fields"])
+    fields["license"] = {"type": "string", "required": False}
+    broken = {**MANIFEST_CONTRACT, "fields": fields}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("fields.license.required" in error for error in errors)
+
+
+def test_manifest_contract_optional_field_must_not_be_required():
+    fields = dict(MANIFEST_CONTRACT["fields"])
+    fields["error_message"] = {"type": "string", "required": True}
+    broken = {**MANIFEST_CONTRACT, "fields": fields}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("fields.error_message.required" in error for error in errors)
+
+
+def test_manifest_contract_missing_controlled_state_is_reported():
+    broken = {**MANIFEST_CONTRACT, "states": ["registered", "validated", "landed"]}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("'states'" in error for error in errors)
+
+
+def test_manifest_contract_unknown_transition_state_is_reported():
+    transitions = dict(MANIFEST_CONTRACT["valid_transitions"])
+    transitions["registered"] = ["validated", "unknown"]
+    broken = {**MANIFEST_CONTRACT, "valid_transitions": transitions}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("unknown state" in error for error in errors)
+
+
+def test_manifest_contract_empty_file_types_is_reported():
+    broken = {**MANIFEST_CONTRACT, "supported_file_types": []}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("supported_file_types" in error for error in errors)
+
+
+def test_manifest_contract_bad_max_byte_size_is_reported():
+    broken = {**MANIFEST_CONTRACT, "max_byte_size": 0}
+
+    errors = validate_source_manifest_contract(broken)
+
+    assert any("max_byte_size" in error for error in errors)
+
+
 def test_validate_config_files_passes_on_real_repo_files():
     validate_config_files(ROOT)
 
@@ -244,6 +344,10 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
     (tmp_path / "contracts/airbnb/silver_listings.yml").write_text(
         valid_silver_yml, encoding="utf-8"
     )
+    (tmp_path / "contracts/ops").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "contracts/ops/source_file_manifest.yml").write_text(
+        yaml.safe_dump(MANIFEST_CONTRACT), encoding="utf-8"
+    )
 
     with pytest.raises(ValueError) as excinfo:
         validate_config_files(tmp_path)
@@ -260,6 +364,7 @@ def test_validate_config_files_reports_missing_file(tmp_path):
         "config/city_registry.yml",
         "contracts/airbnb/bronze_listings.yml",
         "contracts/airbnb/silver_listings.yml",
+        "contracts/ops/source_file_manifest.yml",
     ]:
         assert rel in message
     assert "required file is missing" in message
