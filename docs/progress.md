@@ -2,9 +2,9 @@
 
 ## Current roadmap position (v28 Build Guide)
 
-**F03.2 — Contract, fixture, notebook, dependency and secret validation. Status: Complete on `feature/f03-2-validation-security`; PR pending (see F03.2 evidence below).**
+**F03.3 — Merge protection and delivery readiness. Status: Complete on `feature/f03-3-merge-protection`; PR pending (see F03.3 evidence below).**
 
-F02 and F03.1 are fully closed: PR #11 (F02 runtime work, merge `c909a4f`), PR #12 (v28 docs alignment, merge `2a4c24f`) and PR #13 (F03.1 CI baseline, merge `a041d01`) are all merged into `main`.
+F02, F03.1 and F03.2 are fully closed: PR #11 (F02 runtime, merge `c909a4f`), PR #12 (v28 docs alignment, merge `2a4c24f`), PR #13 (F03.1 CI baseline, merge `a041d01`) and PR #14 (F03.2 validation, merge `58b4da7`, Actions run #43355393517 — both jobs green) are all merged into `main`.
 
 Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so CI for this branch runs via the pull-request check or a manual `workflow_dispatch` from the Actions tab.
 
@@ -16,10 +16,10 @@ Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so
 - Current city: Toronto; snapshot date `2026-09-16`
 - Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-## Repository state (verified 2026-11-13, start of F03.2)
+## Repository state (verified 2026-11-13, start of F03.3)
 
-- Repository: `Liao993/trippilot`, Git folder branch `feature/f03-2-validation-security` (based on `main` at `a041d01`, merge of PR #13 / F03.1), clean tree
-- `main` confirmed on origin at `a041d01` after PR #11 (`c909a4f`), PR #12 (`2a4c24f`) and PR #13 (F03.1 CI baseline, commit `137255f`)
+- Repository: `Liao993/trippilot` (public), Git folder branch `feature/f03-3-merge-protection` (based on `main` at `58b4da7`, merge of PR #14 / F03.2), clean tree
+- `main` confirmed on origin at `58b4da7`; Actions run #43355393517 on the merge commit shows both jobs green (`Lint and unit tests`, `Secret scan (Gitleaks)`); `main` branch protection not yet configured (the key F03.3 gap)
 - Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
 ## Verified F02.1 evidence (2026-11-12)
@@ -64,7 +64,7 @@ Scope per the v28 runbook: extend the existing CI workflow only — no new CI sy
 - Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (25 files formatted); `python -m src.quality.config_validation` exit 0 ("All populated YAML configuration and contract files are valid."); `python -m pytest tests` 53 passed.
 - Negative-path evidence: with `silver_listings.rules` emptied, the validator exits 1 with `contracts/airbnb/silver_listings.yml: 'silver_listings.rules' must be a non-empty mapping`; the real file was then restored and revalidated clean.
 
-## F03.2 implementation and evidence (2026-11-13, complete)
+## F03.2 implementation and evidence (2026-11-13, complete; merged as PR #14 → `58b4da7`, Actions run #43355393517, both jobs green)
 
 Scope per the v28 runbook (F03.2-T01 to T03): contract-driven fixture tests, static notebook/source validation, and dependency/secret scanning — no CI system change beyond extending `lint-test.yml`, no Databricks runtime work.
 
@@ -79,12 +79,34 @@ Scope per the v28 runbook (F03.2-T01 to T03): contract-driven fixture tests, sta
 - Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (28 files formatted); `python -m src.quality.config_validation` exit 0; `python -m src.quality.notebook_validation` exit 0 ("All notebook and source files under notebooks/ are valid."); pip-audit (pinned local mode) clean; gitleaks clean; `python -m pytest tests` 88 passed (was 53; +35).
 - Negative-path evidence: with a broken notebook in a temp root, `python -m src.quality.notebook_validation` exits 1 naming file, cell and syntax error.
 
+## CI evidence convention (added in F03.3; template for every future subfeature)
+
+Every completed subfeature records, in `docs/progress.md` and the matching Notion child page:
+
+- Status: In progress / Blocked / Verified / Merged
+- Scope; Branch; PR; Tested commit SHA; Merge commit SHA; GitHub Actions run
+- Required CI checks — Ruff lint / Ruff format / YAML validation / Notebook-source validation / pip-audit / Gitleaks / pytest — each recorded as pass, fail or not run; never assumed from a green workflow alone
+- Databricks/runtime verification kept separate: a green GitHub workflow does not prove that a notebook, job, table write or deployed application works in the workspace
+- Skipped checks, accepted exceptions and blockers stated explicitly; links to the PR and Actions run; the exact tested commit SHA
+- Summary first, detail only where it helps reproduce or audit the result
+
+## F03.3 implementation and evidence (2026-11-13, complete)
+
+Scope per the v28 runbook (F03.3-T01 to T03): require CI before merge, standardize the evidence record, and make an evidence-based Databricks deployment go/no-go decision. Documentation and settings only — no workflow, pipeline, table or credential changes.
+
+- T01 (merge protection): the required check names were verified from the workflow file and the successful run on the merge commit: `Lint and unit tests` and `Secret scan (Gitleaks)` (Actions run #43355393517, both green on `58b4da7`). The repository is public, so branch protection/rulesets are available on the free plan. The rule itself is configured in GitHub Settings by the maintainer (browser-only); exact steps were delivered with this PR. Verification: this F03.3 PR doubles as the test PR — it contains no risky changes, and its merge box must show both required checks gating the merge.
+- T02 (evidence convention): F03.2 record reconciled (PR #14, merge `58b4da7`, run #43355393517, both jobs green — header and roadmap position above); reusable evidence template added as the section above this one.
+- T03 (deployment readiness): decision — **Deferred, prerequisites unavailable**. Evidence (inspected 2026-11-13): (1) the workspace has no service principals (SCIM list returns 0), so no non-interactive M2M authentication exists for GitHub Actions and no GitHub secret holds a Databricks credential; (2) the repository contains no Databricks bundle or deployment definition (`git ls-files` shows none); (3) no separate non-production deployment target exists — the only workspace is the development workspace where the Git folder already syncs the code. Nothing was deployed, no workflow YAML was added, and no credentials were created or committed. Reopen when: a service principal with an OAuth secret stored in GitHub Actions secrets, a defined non-production deployment target, and a minimal validated bundle (dry run) are available.
+- Regression confirmation (no Python changed): `ruff check src tests` exit 0; `ruff format --check src tests` exit 0; `python -m src.quality.config_validation` exit 0; `python -m src.quality.notebook_validation` exit 0; `python -m pytest tests` 88 passed.
+- This PR's own PR/merge/Actions evidence (PR URL, tested SHA, merge SHA, run URL) is recorded below after merge.
+
 ## Remaining gaps / blockers
 
 - `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
-- CI green on `main` was confirmed by the user for `2a4c24f` (F03.1-T01), and PR #13's checks passed before its merge. The full check run on this branch's pull request (lint, format, YAML validation, notebook validation, pip-audit, unit tests, plus the Gitleaks secret-scan job) still needs confirmation in the browser.
+- `main` branch protection: the rule (required PR + the two required status checks) is configured by the maintainer in GitHub Settings and verified in this PR's merge box before merging; record the result here and in the Notion page.
+- F03.3 PR/merge evidence (PR URL, tested SHA, merge SHA, Actions run URL) to be recorded after merge.
 - Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
 
 ## Next task
 
-Open the pull request for `feature/f03-2-validation-security` → `main`, confirm the Checks tab shows all checks green (lint, format, YAML validation, notebook validation, pip-audit, unit tests, and the secret-scan job) on the PR commit, merge, then continue with the next F03 subfeature per the v28 roadmap.
+First configure the `main` branch protection rule (steps delivered with F03.3), then open the pull request for `feature/f03-3-merge-protection` → `main`; confirm the required checks gate the merge box, merge after both are green, record the PR URL, tested SHA, merge SHA and Actions run here and in the Notion page, then switch the Git folder back to `main` and pull. That closes the F03 foundation. Next per the v28 roadmap: F04 — Shared source acquisition, manifest and raw landing framework.
