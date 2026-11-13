@@ -1,0 +1,10 @@
+# Developer and CI tool dependencies for TripPilot (Python >= 3.11).
+# The CI workflow installs these with `pip install -r requirements.txt`
+# and pip-audit scans the same file. Runtime pipeline code depends on
+# PyYAML (included here) plus Databricks-provided libraries (pyspark,
+# dbutils), which the workspace provides and this file does not install.
+ruff
+# pytest >= 9.0.3: PYSEC-2026-1845 affects pytest 8.4.2 and earlier
+# (identified by pip-audit on 2026-11-13); fixed in 9.0.3.
+pytest>=9.0.3
+pyyaml
