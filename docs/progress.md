@@ -2,9 +2,9 @@
 
 ## Current roadmap position (v29 Build Guide)
 
-**F04.1 — Source manifest and provenance contract. Status: Complete on `feature/f04-1-source-manifest`; PR pending (see F04.1 evidence below).**
+**F04.2 — Raw acquisition, validation and immutable landing. Status: Complete on `feature/f04-2-raw-landing`; PR pending (see F04.2 evidence below).**
 
-The F03 foundation is fully closed: PR #11 (`c909a4f`), PR #12 (`2a4c24f`), PR #13 (`a041d01`) and PR #14 (`58b4da7`) are merged, and F03.3 (merge protection and delivery readiness) merged as PR #15 → `a924126`.
+F04.1 (source manifest and provenance contract) merged as PR #16 → `2321207` (tested commit `bd31b6d`). The F03 foundation is fully closed: PR #11 (`c909a4f`), PR #12 (`2a4c24f`), PR #13 (`a041d01`), PR #14 (`58b4da7`) and PR #15 (`a924126`) are all merged.
 
 Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so CI for this branch runs via the pull-request check or a manual `workflow_dispatch` from the Actions tab.
 
@@ -16,10 +16,10 @@ Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so
 - Current city: Toronto; snapshot date `2026-09-16`
 - Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-## Repository state (verified 2026-11-13, start of F04.1)
+## Repository state (verified 2026-11-13, start of F04.2)
 
-- Repository: `Liao993/trippilot` (public), Git folder branch `feature/f04-1-source-manifest` (based on `main` at `a924126`, merge of PR #15 / F03.3), clean tree
-- `main` confirmed on origin at `a924126`; F03.3 closed the F03 foundation (branch protection on `main` configured by the maintainer per the delivered T01 steps; PR #15 merged with both checks green)
+- Repository: `Liao993/trippilot` (public), Git folder branch `feature/f04-2-raw-landing` (based on `main` at `2321207`, merge of PR #16 / F04.1), clean tree
+- `main` confirmed on origin at `2321207` after the F04.1 merge (both required checks green)
 - Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
 ## Verified F02.1 evidence (2026-11-12)
@@ -111,13 +111,34 @@ Scope per the v29 runbook (F04.1-T01/T02): a metadata/contract subfeature — ma
 - Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (30 files); `python -m src.quality.config_validation` exit 0 (five files); `python -m src.quality.notebook_validation` exit 0; `python -m pytest tests` 124 passed (was 88; +36). No Spark, network, production table or credential used.
 - Defect caught during verification: the first draft rejected every valid record with "Missing required manifest field: byte_size" (required-field loop treated the integer field as a string); fixed by special-casing byte_size. Three Ruff findings (redundant Z replacement, join vs f-string, ValueError vs TypeError) also corrected.
 - Databricks/runtime verification: none for this subfeature (metadata only, by design).
+- Merged after both required checks were green: PR #16 → `2321207` (tested commit `bd31b6d`).
+
+## F04.2 implementation and evidence (2026-11-13, complete; PR pending)
+
+Scope per the v29 runbook (F04.2-T01 to T03): raw acquisition only — validate a staged source file, hash it and land it immutably; no Bronze parsing, no outbound network. Status: Verified locally AND on the actual Databricks Volume.
+
+- T01 (manual upload route): documented in `notebooks/ops/acquire_source_file.ipynb` (Catalog Explorer → `trippilot_dev` → `bronze` → `Volumes` → `source_files` → upload into `_incoming/<family>/<entity>/`); the `_incoming` folder was created on the actual Volume and used by the runtime verification below. The notebook exposes widgets for source path, family, entity ID, version, file type, official source URL, schema version, licence, attribution and retrieved-at, and calls the shared module. No outbound HTTP is used anywhere.
+- T02 (immutable landing): new `src/common/source_acquisition.py` — approved incoming-location check (default `<landing_root>/_incoming`, explicit roots overridable), file validation (existence, regular file, non-empty, 2-GiB limit, csv.gz-only with gzip magic-byte signature check), F04.1 manifest record build, hash-versioned landing path `<family>/<entity>/<version>/<name>__<sha256[:12]>.csv.gz`, temp-file copy + hash verification + atomic rename, never-overwrite (an existing different-hash target fails safely), same-bytes retry idempotent. Path-segment safety blocks `../` and separators in family/entity/version.
+- T03 (safe runs and status): run IDs via `src.common.provenance.build_run_id`; the landed record returns source path, landing path, full SHA-256, byte size, run ID, deterministic `source_file_id` and `processing_state=landed`; all failure messages are sanitized (credential patterns redacted) via the F04.1 helper. `src/common/source_manifest.py` gained a keyword-only `landing_path_prefixes` parameter (default `/Volumes/` unchanged) so unit tests can land into temporary directories without weakening the production contract rule.
+- Tests: `tests/common/test_source_acquisition.py` — 19 tests: valid landing + byte-exact copy, landed-record facts, untouched incoming file, idempotent retry (one file, same source_file_id), changed content → distinct file, tampered landed file never overwritten, interrupted copy leaves no final/temp file then retries, stale temp file does not block landing, missing/empty/oversized file, unsupported file type, signature mismatch, outside approved roots, explicitly approved local path, unsafe family segment, filename/file-type mismatch, credential redaction in failures.
+- Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (32 files); `python -m src.quality.config_validation` exit 0 (five files); `python -m src.quality.notebook_validation` exit 0 (now includes acquire_source_file.ipynb); `python -m pytest tests` 143 passed (was 124; +19). No network or credentials used.
+- Databricks runtime verification (actual Volume `trippilot_dev.bronze.source_files`, serverless compute, executed via the Genie Code session — same code path as the acquisition notebook):
+  - Fixture: synthetic CSV.GZ, 75 bytes, source SHA-256 `03f7b8853510948a7c3284ba6616f36189ddf36ba3674243cf5512d359674263`, staged at `_incoming/insideairbnb/toronto/listings.csv.gz` (identity insideairbnb/toronto/2026-11-13).
+  - Run 1 landed at `/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/2026-11-13/listings__03f7b8853510.csv.gz`, run ID `f14bdbf621a2465699c3dcd8dc0bca94`, `source_file_id` `32903ea9f9fc3e3bb4f920a2509bb9fab740749c4ebb8020144943912685e94c`, state `landed`; landed-file hash verified equal to the source hash; filename carries the hash prefix.
+  - Run 2 (same bytes): idempotent — same landing path and `source_file_id`, exactly one file in the version directory.
+  - Run 3 (corrected content, same logical identity and version): landed as a distinct object `listings__ab143d635132.csv.gz`; both versions retained (2 files in the version dir), first version's hash unchanged.
+  - F02 Toronto raw file unchanged before/after: size 13,117,826 bytes, SHA-256 `e84fe1a5ff1735d5676fe0da211cc12bab2ab9050c3ddc64a4b8a939d5b11d19`; its path and `config/project.yml` were not modified.
+  - Table row counts identical before/after: bronze 22050, ingestion control 1, silver 22050, rejected 0, quality_results 0 — F04.2 wrote no Bronze/Silver data.
+- Defects caught during verification: the initial test layout staged `_incoming` outside the landing root (the module correctly rejected it — tests were fixed to mirror the production layout); two test-authoring bugs (an overwritten staged fixture and a stale missing-file path) corrected; `Sequence` imports moved to `collections.abc` per Ruff UP035; a double `.ipynb` extension on the new notebook renamed before commit.
+- PR #17 CI catch (gitleaks), round 1: the generic secret rule flagged the synthetic Databricks-style credential assignment in `tests/common/test_source_acquisition.py` — a secret keyword as the variable name, an `=`, and a quoted 40-character synthetic value. The fixture is now assembled at runtime from short fragments, so no token-shaped literal or keyword-adjacent quoted secret exists anywhere in the repository; the test's runtime behaviour and assertions are unchanged. The equivalent literal embedded in prose in `tests/common/test_source_manifest.py` (merged via PR #16) does not match the rule because it lacks the assignment shape, but it is a latent risk if that line is ever rewritten — noted for a future cleanup. The gitleaks `HttpError: Resource not accessible by integration` when writing a PR comment is cosmetic: the default `GITHUB_TOKEN` cannot post comments; the leak finding itself was the only blocking problem.
+- PR #17 CI catch (gitleaks), round 2 (second run still red): gitleaks scans EVERY commit in the PR range, not just the head — the scan log shows `git log -p ... f1880ba^..9e50175` ("2 commits scanned"), and the finding was pinned to the ORIGINAL commit `f1880ba` (line 303), which the follow-up fix commit cannot retroactively remove. Standard remedy per gitleaks' own repository: a root `.gitleaksignore` listing the exact immutable finding fingerprint (`f1880ba...:tests/common/test_source_acquisition.py:generic-api-key:303`) — surgical (ignores only that one finding in that one commit, all other scanning fully intact), requires no history rewrite, and also covers the post-merge push to `main` that would otherwise re-scan `f1880ba`. The fingerprint was independently reproduced by running gitleaks' exact scan command against the commit and computing `commit:file:rule:line` — identical. The fingerprint is stable because the commit is immutable.
 
 ## Remaining gaps / blockers
 
 - `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
-- F04.1 PR/merge evidence (PR URL, tested SHA, merge SHA, Actions run URL) to be recorded after merge, here and in the Notion page.
+- F04.2 PR/merge evidence (PR URL, tested SHA, merge SHA, Actions run URL) to be recorded after merge, here and in the Notion page.
 - Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
 
 ## Next task
 
-Open the pull request for `feature/f04-1-source-manifest` → `main`, confirm both required checks are green on the PR commit, merge, record the PR URL, tested SHA, merge SHA and Actions run here and in the Notion page, then switch the Git folder back to `main` and pull. Next per the v29 roadmap: F04.2 — Raw acquisition, validation and immutable landing.
+Open the pull request for `feature/f04-2-raw-landing` → `main`, confirm both required checks are green on the PR commit, merge, record the PR URL, tested SHA, merge SHA and Actions run here and in the Notion page, then switch the Git folder back to `main` and pull. Next per the v29 roadmap: F04.3 — Run controls, reprocessing and failure tests.

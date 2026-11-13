@@ -11,6 +11,7 @@ records are never overwritten.
 
 import hashlib
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -137,8 +138,17 @@ def inspect_source_file(
     }
 
 
-def validate_source_metadata(record: Any) -> list[str]:
-    """Return every manifest metadata problem; each message names the field."""
+def validate_source_metadata(
+    record: Any,
+    *,
+    landing_path_prefixes: Sequence[str] = ("/Volumes/",),
+) -> list[str]:
+    """Return every manifest metadata problem; each message names the field.
+
+    landing_path_prefixes defines the approved immutable landing roots.
+    The default enforces the manifest contract rule (Unity Catalog
+    Volume paths); unit tests pass temporary-directory roots instead.
+    """
     if not isinstance(record, dict):
         return ["Manifest record must be a mapping"]
 
@@ -191,10 +201,11 @@ def validate_source_metadata(record: Any) -> list[str]:
 
     landing_path = record.get("landing_path")
     if _is_nonempty_string(landing_path) and not str(landing_path).startswith(
-        "/Volumes/"
+        tuple(landing_path_prefixes)
     ):
         errors.append(
-            "landing_path must be a Unity Catalog Volume path starting with /Volumes/"
+            "landing_path must be an immutable landing path starting with one of: "
+            + ", ".join(landing_path_prefixes)
         )
     if state == "landed" and not _is_nonempty_string(landing_path):
         errors.append("landing_path is required when processing_state is landed")
@@ -239,6 +250,8 @@ def apply_state_transition(
     to_state: str,
     error_message: str | None = None,
     landing_path: str | None = None,
+    *,
+    landing_path_prefixes: Sequence[str] = ("/Volumes/",),
 ) -> dict[str, Any]:
     """Return a NEW record copy in to_state; the original stays unchanged."""
     validate_state_transition(record.get("processing_state"), to_state)
@@ -260,7 +273,9 @@ def apply_state_transition(
         updated["landing_path"] = str(landing_path)
     updated["processing_state"] = to_state
 
-    errors = validate_source_metadata(updated)
+    errors = validate_source_metadata(
+        updated, landing_path_prefixes=landing_path_prefixes
+    )
     if errors:
         raise ValueError("Invalid source manifest metadata:\n- " + "\n- ".join(errors))
     return updated
