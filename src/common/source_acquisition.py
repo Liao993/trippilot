@@ -25,6 +25,7 @@ from src.common.source_manifest import (
     DEFAULT_MAX_BYTE_SIZE,
     apply_state_transition,
     build_manifest_record,
+    build_source_file_id,
     compute_file_hash_sha256,
     sanitize_error_message,
 )
@@ -117,6 +118,107 @@ def _land(
     )
 
 
+def verify_landed_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Verify the immutable landed object matches the manifest record.
+
+    Checks that the landing path exists, is a regular file, its
+    SHA-256 equals the stored file_hash_sha256 and its byte size
+    equals the stored byte_size. Returns the record unchanged; raises
+    a sanitized ValueError when the landed object is missing or does
+    not match. A mismatch is an integrity incident, not something to
+    re-land: landed raw files are immutable.
+    """
+    try:
+        landing_path = record.get("landing_path")
+        if not isinstance(landing_path, str) or not landing_path.strip():
+            raise ValueError("landed manifest record has no landing_path")
+        path = Path(landing_path)
+        if not path.exists():
+            raise ValueError(
+                f"{path}: landed file not found "
+                f"(source_file_id {record.get('source_file_id')})"
+            )
+        if not path.is_file():
+            raise ValueError(f"{path}: landed object is not a regular file")
+        actual_hash = compute_file_hash_sha256(path)
+        expected_hash = str(record.get("file_hash_sha256"))
+        if actual_hash != expected_hash:
+            raise ValueError(
+                f"{path}: landed file hash {actual_hash[:12]}... does not match "
+                f"the manifest hash {expected_hash[:12]}...; landed raw files are "
+                "immutable - investigate instead of re-landing"
+            )
+        actual_size = path.stat().st_size
+        expected_size = record.get("byte_size")
+        if actual_size != expected_size:
+            raise ValueError(
+                f"{path}: landed file size {actual_size} does not match the "
+                f"manifest byte_size {expected_size}"
+            )
+        return record
+    except ValueError as exc:
+        raise ValueError(sanitize_error_message(str(exc))) from None
+
+
+def verify_existing_source_file(
+    source_file_id: str,
+    manifest_store: Any,
+) -> dict[str, Any]:
+    """Verify the landed object for a stored manifest ID (no incoming file).
+
+    Reads the landed manifest record from the store and hash-verifies
+    the immutable landed object. Raises a clear ValueError when the ID
+    is unknown, the record is not landed, or the object no longer
+    matches. Never touches the incoming staging area.
+    """
+    return verify_landed_record(manifest_store.read_landed(source_file_id))
+
+
+def reprocess_source_file(
+    source_identity: dict[str, Any],
+    manifest_store: Any,
+) -> dict[str, Any]:
+    """Resolve the landed path for a source identity without re-acquiring.
+
+    source_identity is a mapping with source_family, source_entity_id,
+    source_version, file_type and file_hash_sha256. The deterministic
+    source_file_id is recomputed, the landed manifest record is read
+    from the store, and the immutable landed object is hash-verified.
+    This never reads the incoming file and never copies or downloads
+    anything: use the returned landing_path for downstream processing.
+    """
+    if not isinstance(source_identity, dict):
+        raise TypeError("source_identity must be a mapping")
+    try:
+        required = (
+            "source_family",
+            "source_entity_id",
+            "source_version",
+            "file_type",
+            "file_hash_sha256",
+        )
+        missing = [
+            field
+            for field in required
+            if not isinstance(source_identity.get(field), str)
+            or not source_identity[field].strip()
+        ]
+        if missing:
+            raise ValueError(
+                "source_identity requires non-empty: " + ", ".join(missing)
+            )
+        source_file_id = build_source_file_id(
+            source_identity["source_family"],
+            source_identity["source_entity_id"],
+            source_identity["source_version"],
+            source_identity["file_type"],
+            source_identity["file_hash_sha256"],
+        )
+        return verify_existing_source_file(source_file_id, manifest_store)
+    except ValueError as exc:
+        raise ValueError(sanitize_error_message(str(exc))) from None
+
+
 def acquire_source_file(
     source_metadata: dict[str, Any],
     source_path: str | Path,
@@ -125,6 +227,7 @@ def acquire_source_file(
     max_byte_size: int = DEFAULT_MAX_BYTE_SIZE,
     run_id: str | None = None,
     landing_path_prefixes: Sequence[str] = ("/Volumes/",),
+    manifest_store: Any = None,
 ) -> dict[str, Any]:
     """Validate a staged source file and land it immutably; return the record.
 
@@ -132,6 +235,25 @@ def acquire_source_file(
     default <landing_root>/_incoming, the manual UI upload folder).
     Raises ValueError with a sanitized, actionable message on any
     problem, and never overwrites a landed file.
+
+    When manifest_store is provided (a ManifestStore or any adapter
+    with read/upsert), acquisition also becomes manifest-driven:
+    - The attempt is visible in the manifest table from the registered
+      state onwards, and a failure stores a failed record carrying the
+      sanitized reason (registered -> failed).
+    - An idempotent retry of bytes that are already landed resolves to
+      the EXISTING landed record after hash-verifying the landed
+      object, without copying again.
+    - A controlled retry of a failed record re-runs the full
+      validation and landing; only then do the operational fields move
+      to the new attempt's run_id and state. Failed runs are never
+      silently converted to successful ones.
+
+    Failures before the file facts are known (missing, empty or
+    oversized incoming files) cannot produce a manifest row because
+    the deterministic ID requires the content hash; they surface
+    directly to the operator. This module never parses source data:
+    Bronze ingestion stays a separate concern.
     """
     if not isinstance(source_metadata, dict):
         raise TypeError("source_metadata must be a mapping")
@@ -153,40 +275,62 @@ def acquire_source_file(
         record = build_manifest_record(
             source_metadata, source, run_id=run_id, max_byte_size=max_byte_size
         )
-        verify_file_signature(source, file_type)
 
-        final_path = build_landing_path(root, source, record)
-        if final_path.exists():
-            if not final_path.is_file():
-                raise ValueError(
-                    f"{final_path}: landing target exists and is not a regular file"
-                )
-            existing_hash = compute_file_hash_sha256(final_path)
-            if existing_hash == record["file_hash_sha256"]:
-                return _land(record, final_path, landing_path_prefixes)
-            raise ValueError(
-                f"{final_path}: already exists with different content (sha256 "
-                f"{existing_hash[:12]}...); landed raw files are immutable and are "
-                "never overwritten - a corrected file lands under its own hash"
-            )
+        if manifest_store is not None:
+            existing = manifest_store.read(record["source_file_id"])
+            if existing is not None and existing.get("processing_state") == "landed":
+                return verify_landed_record(existing)
+            manifest_store.upsert(record)
 
-        final_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = final_path.parent / f".{final_path.name}.tmp-{uuid.uuid4().hex}"
         try:
-            shutil.copyfile(source, temp_path)
-            if compute_file_hash_sha256(temp_path) != record["file_hash_sha256"]:
-                raise ValueError(
-                    f"{temp_path}: copied bytes do not match the source hash; "
-                    "landing aborted"
-                )
+            verify_file_signature(source, file_type)
+            final_path = build_landing_path(root, source, record)
             if final_path.exists():
+                if not final_path.is_file():
+                    raise ValueError(
+                        f"{final_path}: landing target exists and is not a regular file"
+                    )
+                existing_hash = compute_file_hash_sha256(final_path)
+                if existing_hash == record["file_hash_sha256"]:
+                    landed = _land(record, final_path, landing_path_prefixes)
+                    if manifest_store is not None:
+                        manifest_store.upsert(landed)
+                    return landed
                 raise ValueError(
-                    f"{final_path}: appeared during landing; aborting without overwrite"
+                    f"{final_path}: already exists with different content (sha256 "
+                    f"{existing_hash[:12]}...); landed raw files are immutable and are "
+                    "never overwritten - a corrected file lands under its own hash"
                 )
-            os.replace(temp_path, final_path)
-        finally:
-            if temp_path.exists():
-                temp_path.unlink()
-        return _land(record, final_path, landing_path_prefixes)
+
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = final_path.parent / f".{final_path.name}.tmp-{uuid.uuid4().hex}"
+            try:
+                shutil.copyfile(source, temp_path)
+                if compute_file_hash_sha256(temp_path) != record["file_hash_sha256"]:
+                    raise ValueError(
+                        f"{temp_path}: copied bytes do not match the source hash; "
+                        "landing aborted"
+                    )
+                if final_path.exists():
+                    raise ValueError(
+                        f"{final_path}: appeared during landing; aborting without overwrite"
+                    )
+                os.replace(temp_path, final_path)
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
+            landed = _land(record, final_path, landing_path_prefixes)
+            if manifest_store is not None:
+                manifest_store.upsert(landed)
+            return landed
+        except (ValueError, OSError) as exc:
+            # Record the visible failure (registered -> failed) with the
+            # sanitized reason, then re-raise: the attempt stays
+            # auditable and a controlled retry can re-run it.
+            if manifest_store is not None:
+                manifest_store.upsert(
+                    apply_state_transition(record, "failed", error_message=str(exc))
+                )
+            raise
     except ValueError as exc:
         raise ValueError(sanitize_error_message(str(exc))) from None
