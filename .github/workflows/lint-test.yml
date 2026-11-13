@@ -30,5 +30,11 @@ jobs:
       - name: Lint helpers and tests
         run: ruff check src tests
 
+      - name: Check Python formatting
+        run: ruff format --check src tests
+
+      - name: Validate YAML configuration and contracts
+        run: python -m src.quality.config_validation
+
       - name: Run unit tests
         run: python -m pytest tests -v

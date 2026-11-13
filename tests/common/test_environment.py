@@ -5,20 +5,26 @@ These tests check exact rules: test mode must never resolve a development
 table, live mode must resolve the development tables, and run-control
 decisions must combine force reload with the skip-if-successful rule.
 """
+
 import sys
 from pathlib import Path
 
 start = Path.cwd().resolve()
 ROOT = next(
-    (p for p in [start, *start.parents]
-     if (p / 'src').is_dir() and (p / 'config/project.yml').is_file()),
+    (
+        p
+        for p in [start, *start.parents]
+        if (p / "src").is_dir() and (p / "config/project.yml").is_file()
+    ),
     None,
 )
 if ROOT is None:
-    raise RuntimeError('Cannot locate repository root. Open this notebook inside the Databricks Git folder.')
+    raise RuntimeError(
+        "Cannot locate repository root. Open this notebook inside the Databricks Git folder."
+    )
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-print('Repository root:', ROOT)
+print("Repository root:", ROOT)
 
 import pytest
 
@@ -80,9 +86,7 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("quality_results", "test") == (
         "trippilot_dev.ops.quality_results_test"
     )
-    assert resolve_table("exclusion", "test") == (
-        "trippilot_dev.ops.exclusion_test"
-    )
+    assert resolve_table("exclusion", "test") == ("trippilot_dev.ops.exclusion_test")
 
     assert resolve_table("bronze", "live") == (
         "trippilot_dev.bronze.airbnb_listings_bronze"

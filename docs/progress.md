@@ -2,9 +2,9 @@
 
 ## Current roadmap position (v28 Build Guide)
 
-**F02.2 / F02.3 — Isolated migration execution, recovery tests, and reconciliation. Status: Complete; merged into `main` via PR #11 (merge commit `c909a4f`, 2026-11-12).**
+**F03.1 — CI baseline and developer checks. Status: Complete on `feature/f03-1-ci-baseline`; PR pending (see F03.1 evidence below).**
 
-F02.1 fixes are pushed (commit `f6d1420`: CI `run:` repair, Silver test alignment, this progress file). F02.2 implementation and runtime test-mode execution are complete; F02.3 reconciliation passed.
+F02 is fully closed: PR #11 (F02 runtime work, merge `c909a4f`) and PR #12 (v28 docs alignment, merge `2a4c24f`) are both merged into `main`; the user confirmed the main-branch CI run passed on `2a4c24f`.
 
 Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so CI for this branch runs via the pull-request check or a manual `workflow_dispatch` from the Actions tab.
 
@@ -16,11 +16,10 @@ Note: the CI workflow's push trigger covers `main` and `feature/add-ci` only, so
 - Current city: Toronto; snapshot date `2026-09-16`
 - Databricks compute: serverless, Python 3.12.3 (meets the 3.11+ requirement for `datetime.UTC`), Spark 4.3.0.dev0
 
-## Repository state (verified 2026-11-12, after PR #11 merge)
+## Repository state (verified 2026-11-13, start of F03.1)
 
-- Repository: `Liao993/trippilot`, Git folder branch `main`
-- Local HEAD `c909a4f04519bd0a86e56e89623995e268baa8f9` (merge of PR #11), equal to `origin/main` after the user's pull
-- F02 work merged via PR #11: commits `f6d1420` (F02.1 fixes), `7ff44b8` (F02.2 isolation), `46e7a19` (runtime evidence)
+- Repository: `Liao993/trippilot`, Git folder branch `feature/f03-1-ci-baseline` (based on `main` at `2a4c24f`, merge of PR #12), clean tree
+- `main` confirmed on origin at `2a4c24f` after PR #11 (`c909a4f`, F02 runtime work) and PR #12 (v28 docs alignment, commit `f1bc087`)
 - Layout reconciles with v28: `src/airbnb`, `src/common`, `src/quality`, `src/contracts`; `tests/airbnb`, `tests/common`, `tests/quality`; `config/project.yml`, `config/city_registry.yml`; `contracts/airbnb/bronze_listings.yml`, `contracts/airbnb/silver_listings.yml`; notebooks under `notebooks/bronze|silver|gold|ops`
 
 ## Verified F02.1 evidence (2026-11-12)
@@ -54,12 +53,23 @@ All notebook runs executed the committed code (branch `chore/feature-1-foundatio
 - Synthetic invalid-input test: 3-row synthetic slice (`_snapshot_date=1900-01-01`) appended to bronze_test and validated with the pipeline's own rules (`contracts/airbnb/silver_listings.yml`, table `silver_listings`): empty `id` → rejected (`Missing required field: id`); non-null unparseable price (`not-a-price`) → rejected (`Invalid numeric value for price`); a valid row → accepted. Raw bronze-shaped rows lacking `city`/`snapshot_date` were also rejected with recorded reasons. The synthetic slice was deleted afterward — bronze_test restored to 22,050 rows (version 8), silver_test untouched.
 - Reconciliation (F02.3): raw 22,050 = bronze_test 22,050 = silver_test 22,050 + rejected_test 0 + duplicates 0. Test vs dev: silver `listing_id` sets identical (22,050 distinct each, 0 differences); bronze/silver/rejected row counts identical to dev.
 
+## F03.1 implementation and evidence (2026-11-13, complete)
+
+Scope per the v28 runbook: extend the existing CI workflow only — no new CI system, no Databricks deployment, no pipeline or table changes.
+
+- T01 (inspect and preserve): `.github/workflows/lint-test.yml` reviewed in full — triggers are pull request → `main`, push → `main`/`feature/add-ci`, and manual `workflow_dispatch`; it sets up Python 3.11, installs Ruff/pytest/PyYAML, then runs `ruff check src tests` and `python -m pytest tests -v`. The user confirmed the main-branch CI run passed on `2a4c24f`. Nothing was deleted or recreated; Python stays 3.11 (the code targets ≥3.11 and the green run confirms compatibility).
+- T02 (Ruff format check): no `pyproject.toml` or Ruff config exists anywhere in the repo, so none was created. `ruff format --check src tests` initially flagged 15 files (all of `src` plus 9 test files); `ruff format src tests` reformatted exactly those 15 (110 insertions, 88 deletions — quote normalization and expression joins only, per `git diff --stat`); all 34 tests still passed afterward. The workflow now runs `ruff format --check src tests` after lint. No new dependency file was needed.
+- T03 (YAML validation): new `src/quality/config_validation.py` reuses `contract_loader.load_contract` / `get_table_rules` (no second loader, no duplicate of the Spark-based row validator) and adds structure checks for exactly the four populated files: `config/project.yml` (sections `project`/`databricks`/`sources`; keys `project.name`, `databricks.catalog`, `databricks.schemas`), `config/city_registry.yml` (`cities` list; per-entry `city` + `enabled`), `contracts/airbnb/bronze_listings.yml` (table, source, non-empty `required_columns`), `contracts/airbnb/silver_listings.yml` (table, `business_key`, `required_columns`, non-empty `rules` mapping with per-column mappings). Empty placeholder YAML files are deliberately excluded. Errors name the file and the missing/invalid key; the check needs only Python + PyYAML — no Spark, Databricks, production tables, or credentials. CI step: `python -m src.quality.config_validation`, between the format check and pytest per the runbook's required order.
+- Unit tests: `tests/quality/test_config_validation.py` adds 19 tests (synthetic fixtures, error-message checks naming file + key, invalid-YAML and missing-file paths via `tmp_path`, plus one run against the four real repo files). Suite total: 53 passed, 0 failed (was 34).
+- Local verification, in CI order: `ruff check src tests` exit 0; `ruff format --check src tests` exit 0 (25 files formatted); `python -m src.quality.config_validation` exit 0 ("All populated YAML configuration and contract files are valid."); `python -m pytest tests` 53 passed.
+- Negative-path evidence: with `silver_listings.rules` emptied, the validator exits 1 with `contracts/airbnb/silver_listings.yml: 'silver_listings.rules' must be a non-empty mapping`; the real file was then restored and revalidated clean.
+
 ## Remaining gaps / blockers
 
 - `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
-- GitHub Actions green on `main` (merge commit `c909a4f`) still needs confirmation in the browser (the push trigger covers `main` and `feature/add-ci`).
+- CI green on `main` was confirmed by the user for `2a4c24f` (runbook F03.1-T01). The four-check CI run on this branch's pull request still needs confirmation in the browser.
 - Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
 
 ## Next task
 
-Merge the documentation-alignment branch, confirm CI green on `main` (merge commit `c909a4f`), then start F03 per the v28 roadmap.
+Open the pull request for `feature/f03-1-ci-baseline` → `main`, confirm the Checks tab shows all four checks (lint, format, YAML validation, tests) green on the PR commit, merge, then continue with the next F03 subfeature per the v28 roadmap.
