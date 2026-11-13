@@ -47,8 +47,7 @@ def validate_run_mode(run_mode: str) -> str:
 
     if normalized not in VALID_RUN_MODES:
         raise ValueError(
-            f"Unknown run mode: {run_mode!r}. "
-            f"Expected one of {VALID_RUN_MODES}."
+            f"Unknown run mode: {run_mode!r}. Expected one of {VALID_RUN_MODES}."
         )
 
     return normalized
@@ -115,8 +114,7 @@ def validate_force_reload(force_reload: Any) -> bool:
         return False
 
     raise ValueError(
-        f"Unknown force-reload value: {force_reload!r}. "
-        "Expected 'true' or 'false'."
+        f"Unknown force-reload value: {force_reload!r}. Expected 'true' or 'false'."
     )
 
 

@@ -4,20 +4,26 @@ Unit tests for ingestion rerun-control logic.
 These tests use small hardcoded inputs on purpose. They check exact rules
 without needing Databricks, Spark, a Volume, or real Airbnb data.
 """
+
 import sys
 from pathlib import Path
 
 start = Path.cwd().resolve()
 ROOT = next(
-    (p for p in [start, *start.parents]
-     if (p / 'src').is_dir() and (p / 'config/project.yml').is_file()),
+    (
+        p
+        for p in [start, *start.parents]
+        if (p / "src").is_dir() and (p / "config/project.yml").is_file()
+    ),
     None,
 )
 if ROOT is None:
-    raise RuntimeError('Cannot locate repository root. Open this notebook inside the Databricks Git folder.')
+    raise RuntimeError(
+        "Cannot locate repository root. Open this notebook inside the Databricks Git folder."
+    )
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-print('Repository root:', ROOT)
+print("Repository root:", ROOT)
 
 from src.common.run_controls import build_control_record, should_load
 

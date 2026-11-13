@@ -1,6 +1,7 @@
 """
 This keeps reusable logic in src/, where your existing CI can lint and test it. The plan recommends src/ for reusable behavior and tests/ for checks.
 """
+
 """Reusable provenance metadata for TripPilot ingestion pipelines."""
 
 from datetime import UTC, datetime
@@ -27,4 +28,4 @@ def build_provenance_columns(
         "raw_path": raw_path,
         "run_id": run_id,
         "ingested_at_utc": datetime.now(UTC).isoformat(),
-    } 
+    }

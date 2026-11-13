@@ -26,12 +26,7 @@ def clean_price(value: str | None) -> float | None:
     if value is None:
         return None
 
-    cleaned = (
-        value
-        .replace("$", "")
-        .replace(",", "")
-        .strip()
-    )
+    cleaned = value.replace("$", "").replace(",", "").strip()
 
     if cleaned == "":
         return None
