@@ -15,9 +15,11 @@ import yaml
 from src.quality.contract_loader import get_table_rules, load_contract
 
 # The populated files this validation covers, mapped to their validators.
-# Placeholder files (config/alerts.yml, config/jobs.yml, config/model.yml,
-# config/slos.yml and the empty operational contracts exclusion.yml,
-# pipeline_runs.yml and quality_results.yml) are not listed.
+# The former empty placeholder files (config/alerts.yml, config/jobs.yml,
+# config/model.yml, config/slos.yml and the empty operational contracts
+# exclusion.yml, pipeline_runs.yml and quality_results.yml) were removed
+# in the pre-F06 repository cleanup; a future feature that needs one of
+# them should create it populated, and list it here.
 CONFIG_FILES: dict[str, str] = {
     "config/project.yml": "project",
     "config/city_registry.yml": "city_registry",

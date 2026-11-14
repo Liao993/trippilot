@@ -2,9 +2,9 @@
 
 ## Current roadmap position (v29 Build Guide)
 
-**F05.3 — Identity-aware idempotent ingestion and controlled reprocessing. Status: Complete on `feature/f05-3-identity-reprocessing` (test-mode runtime verified); PR pending.**
+**F06 — Airbnb calendar and detailed review ingestion/Bronze. Status: Not started; repository cleaned on `chore/cleanup-pre-f06` (PR pending).**
 
-F05.2 merged as PR #20 → `093ee31` (commit `4b685af`); F05.1 as PR #19 → `289d281` (commit `9fe31dc`). F04.3 merged as PR #18 → `0d5ed20`; F04.2 as PR #17 → `b2655b2`; F04.1 as PR #16 → `2321207`; the F03 foundation: PR #11 (`c909a4f`), #12 (`2a4c24f`), #13 (`a041d01`), #14 (`58b4da7`), #15 (`a924126`).
+F05.3 merged as PR #21 → `8deb9c8` (commit `23e3d31`); F05.2 as PR #20 → `093ee31` (commit `4b685af`); F05.1 as PR #19 → `289d281` (commit `9fe31dc`). F04.3 merged as PR #18 → `0d5ed20`; F04.2 as PR #17 → `b2655b2`; F04.1 as PR #16 → `2321207`; the F03 foundation: PR #11 (`c909a4f`), #12 (`2a4c24f`), #13 (`a041d01`), #14 (`58b4da7`), #15 (`a924126`).
 
 Merging F04.3 closes feature 4 in full: every source file is manifest-tracked from registration through landed/failed, reprocessable from the landed raw object without re-downloading, with per-file failure isolation.
 
@@ -190,10 +190,9 @@ Approved corrected-file policy (recorded per the policy gate): F04 preserves eve
 ## Remaining gaps / blockers
 
 - F05.1 licence verification still open: the production manifest registration for the Toronto snapshot (live table) is held until the operator confirms the licence and attribution from the current official Inside Airbnb policy; the F05.2 runtime evidence used the isolated test manifest table with a clearly-marked TEST-ONLY placeholder licence, and the landed object is byte-identical to the root file.
-- `notebooks/ops/verify_setup.ipynb` contains a Delta `overwrite` to `trippilot_dev.ops.setup_verification`; review that cell and its target before any run.
 - F04.2/F04.3 Notion child pages: PR URL, tested SHA, merge SHA and Actions run URL to be pasted by the operator after each merge (progress.md carries the SHAs). The live `ops.source_file_manifest` table is created by the first real acquisition run, never by tests.
-- Local workspace cleanup pending confirmation: `.pytest_cache/`, `.ruff_cache/` (gitignored caches) and the stray tracked `src/common/__init__` (superseded by `src/common/__init__.py`).
+- Local workspace cleanup DONE on `chore/cleanup-pre-f06` (2026-11-14): removed the stray tracked `src/common/__init__` (superseded by `__init__.py`), the gitignored `.pytest_cache/`/`.ruff_cache/` directories from disk, all 0-byte placeholder files for not-yet-built features (config/alerts.yml, jobs.yml, model.yml, slos.yml; contracts/ops/exclusion.yml, pipeline_runs.yml, quality_results.yml; docs/incidents.md, metrics/metric_dictionary.md, production_readiness_report.md; notebooks/orchestration/airbnb_pipeline.py), the unreferenced dead module `src/quality/contract_validation.py` with its empty test (superseded by `src/quality/record_validation.validate_listing`, which transformations.py and exclusion.py actually import), the one-off `notebooks/ops/verify_setup.ipynb` setup-evidence notebook, and the trailing blank cell of the Bronze ingest notebook. Kept: `notebooks/ops/setup_control_tables.py` (creates the live control and `ops.quality_results` tables referenced by the silver contract and `environment.py`), all `__init__.py` package markers, and every populated feature 1–5 file. A future feature that needs one of the removed placeholders should create it populated and add it to `CONFIG_FILES` in `src/quality/config_validation.py`. All deletions are recoverable from Git history.
 
 ## Next task
 
-Push `feature/f05-3-identity-reprocessing` and open its pull request to `main` (code, tests and test-mode runtime evidence complete). After merge: record the PR URL, tested SHA, merge SHA and Actions run here and in the Notion page, switch the Git folder back to `main` and pull. The operator licence confirmation (F05.1) is still open, and live-mode runs of the notebook stay withheld until it is done. Next per the v29 roadmap: F06 — Airbnb calendar and detailed review ingestion/Bronze. Test fixtures under `source_files/_test_fixtures/f05-3` and the drill's rows in the `_test` manifest/control tables are runtime evidence and may be cleaned up after review.
+Merge `chore/cleanup-pre-f06` and record its PR URL and merge SHA here; then start F06 — Airbnb calendar and detailed review ingestion/Bronze — from the cleaned state. The operator licence confirmation (F05.1) is still open, and live-mode runs of the notebook stay withheld until it is done. Test fixtures under `source_files/_test_fixtures/f05-3` and the drill's rows in the `_test` manifest/control tables are runtime evidence and may be cleaned up after review.
