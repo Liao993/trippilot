@@ -17,6 +17,12 @@ bronze_listings:
     - last_review
   source_types: string
   write_policy: replace_city_snapshot
+  # F05.3 corrected-file policy: F04 preserves every raw file version
+  # immutably; Bronze keeps ONE current slice per city/snapshot. A
+  # corrected source file (new hash -> new source_file_id) replaces the
+  # slice ONLY through an explicit reprocess authorization, with a
+  # control record linking the new identity to the one it replaces.
+  corrected_file_policy: explicit_reprocess_replace_slice
   provenance_columns:
     - _source
     - _city

@@ -39,6 +39,52 @@ def read_csv_gz_header_line(path) -> str:
     return line.rstrip("\r\n")
 
 
+def verify_gzip_integrity(path) -> int:
+    """Fully decompress the gzip file; return the decompressed byte count.
+
+    A gzip file can carry a valid magic signature and hash yet be
+    truncated or corrupted mid-stream. Reading only the header line
+    proves nothing about the body, so Bronze requires the whole stream
+    to decompress cleanly BEFORE Spark parses it. Raises a clear
+    ValueError when the stream cannot be read end-to-end or decompresses
+    to nothing.
+    """
+    file = Path(path)
+    if not file.exists():
+        raise ValueError(f"{file}: source file not found")
+    if not file.is_file():
+        raise ValueError(f"{file}: source is not a regular file")
+    if file.stat().st_size == 0:
+        raise ValueError(f"{file}: source file is empty")
+    decompressed = 0
+    try:
+        with gzip.open(file, "rb") as stream:
+            while chunk := stream.read(1 << 20):
+                decompressed += len(chunk)
+    except (OSError, EOFError) as error:
+        raise ValueError(
+            f"{file}: gzip stream is not readable end-to-end ({error})"
+        ) from error
+    if decompressed == 0:
+        raise ValueError(f"{file}: gzip stream decompresses to nothing")
+    return decompressed
+
+
+def check_required_columns(
+    columns: list[str],
+    required_columns: list[str],
+) -> list[str]:
+    """Return the required columns missing from the observed header.
+
+    An empty result means the observed header satisfies the Bronze
+    source contract. Missing REQUIRED columns are a hard failure before
+    any write; additional unexpected columns are reported by the caller
+    as schema drift for review, not silently ignored.
+    """
+    observed = set(columns)
+    return [column for column in required_columns if column not in observed]
+
+
 def inspect_csv_gz_header(path) -> dict:
     """Inspect the gzip CSV header at path; return registration evidence.
 

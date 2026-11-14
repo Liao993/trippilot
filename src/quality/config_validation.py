@@ -120,6 +120,12 @@ def validate_bronze_contract(
             f"{label}: 'bronze_listings.provenance_columns' must be a non-empty "
             "list of column names"
         )
+    policy = rules.get("corrected_file_policy")
+    if policy is not None and not _is_nonempty_string(policy):
+        errors.append(
+            f"{label}: 'bronze_listings.corrected_file_policy' must be a "
+            "non-empty string"
+        )
     return errors
 
 

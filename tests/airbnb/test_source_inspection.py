@@ -11,8 +11,10 @@ import gzip
 import pytest
 
 from src.airbnb.source_inspection import (
+    check_required_columns,
     inspect_csv_gz_header,
     read_csv_gz_header_line,
+    verify_gzip_integrity,
 )
 
 
@@ -113,3 +115,68 @@ def test_header_line_strips_crlf(tmp_path):
         file.write("id,name\r\n1,alpha\r\n")
 
     assert read_csv_gz_header_line(path) == "id,name"
+
+
+# --- F05.3: full-stream integrity and contract column checks ----------
+
+
+def test_gzip_integrity_returns_decompressed_size(tmp_path):
+    source = _write_gzip_csv(
+        tmp_path / "listings.csv.gz", "id,name", rows=("1,alpha\n", "2,beta\n")
+    )
+
+    decompressed = verify_gzip_integrity(source)
+
+    assert decompressed == len(b"id,name\n1,alpha\n2,beta\n")
+
+
+def test_gzip_integrity_rejects_corrupt_stream(tmp_path):
+    source = _write_gzip_csv(
+        tmp_path / "listings.csv.gz", "id,name", rows=("1,alpha\n",)
+    )
+    compressed = bytearray(source.read_bytes())
+    compressed[-6] ^= 0xFF  # corrupt the gzip trailer
+    corrupted = tmp_path / "corrupt.csv.gz"
+    corrupted.write_bytes(bytes(compressed))
+
+    with pytest.raises(ValueError, match="not readable end-to-end"):
+        verify_gzip_integrity(corrupted)
+
+
+def test_gzip_integrity_rejects_truncated_stream(tmp_path):
+    source = _write_gzip_csv(
+        tmp_path / "listings.csv.gz", "id,name", rows=("1,alpha\n",)
+    )
+    truncated = tmp_path / "truncated.csv.gz"
+    truncated.write_bytes(source.read_bytes()[:-10])
+
+    with pytest.raises(ValueError):
+        verify_gzip_integrity(truncated)
+
+
+@pytest.mark.parametrize("case", ["missing", "empty", "not_gzip", "decompresses_empty"])
+def test_gzip_integrity_rejects_unusable_sources(tmp_path, case):
+    path = tmp_path / "bad.csv.gz"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if case == "missing":
+        path = tmp_path / "does_not_exist.csv.gz"
+    elif case == "empty":
+        path.write_bytes(b"")
+    elif case == "not_gzip":
+        path.write_bytes(b"plain text, not gzip")
+    elif case == "decompresses_empty":
+        with gzip.open(path, "wt", encoding="utf-8") as file:
+            file.write("")
+
+    with pytest.raises(ValueError):
+        verify_gzip_integrity(path)
+
+
+def test_required_columns_pass_when_present():
+    assert check_required_columns(["id", "name", "price"], ["id", "price"]) == []
+
+
+def test_required_columns_check_reports_missing_in_order():
+    missing = check_required_columns(["id", "name"], ["price", "id", "latitude"])
+
+    assert missing == ["price", "latitude"]
