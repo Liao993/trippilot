@@ -17,3 +17,12 @@ bronze_listings:
     - last_review
   source_types: string
   write_policy: replace_city_snapshot
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256

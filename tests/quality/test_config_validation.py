@@ -174,6 +174,30 @@ def test_bronze_missing_required_columns_is_reported():
     assert "bronze_listings.required_columns" in errors[0]
 
 
+def test_bronze_valid_provenance_columns_pass():
+    contract = {
+        "bronze_listings": {
+            **BRONZE_CONTRACT["bronze_listings"],
+            "provenance_columns": ["_source", "_city", "_source_file_id"],
+        }
+    }
+
+    assert validate_bronze_contract(contract) == []
+
+
+def test_bronze_empty_provenance_column_names_are_reported():
+    contract = {
+        "bronze_listings": {
+            **BRONZE_CONTRACT["bronze_listings"],
+            "provenance_columns": ["_source", ""],
+        }
+    }
+
+    errors = validate_bronze_contract(contract)
+    assert len(errors) == 1
+    assert "bronze_listings.provenance_columns" in errors[0]
+
+
 def test_bronze_missing_table_section_is_reported():
     errors = validate_bronze_contract({})
     assert len(errors) == 1

@@ -114,6 +114,12 @@ def validate_bronze_contract(
             f"{label}: 'bronze_listings.required_columns' must be a non-empty "
             "list of column names"
         )
+    provenance = rules.get("provenance_columns")
+    if provenance is not None and not _is_nonempty_string_list(provenance):
+        errors.append(
+            f"{label}: 'bronze_listings.provenance_columns' must be a non-empty "
+            "list of column names"
+        )
     return errors
 
 

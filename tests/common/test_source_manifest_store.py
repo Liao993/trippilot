@@ -279,3 +279,67 @@ def test_duplicate_upserts_produce_the_same_merge_and_cannot_append_rows():
     assert first == second
     assert "INSERT INTO" not in first
     assert first.count("MERGE INTO") == 1
+
+
+def test_read_landed_by_identity_returns_the_single_landed_row():
+    validated = apply_state_transition(_record(), "validated")
+    landed = apply_state_transition(
+        validated,
+        "landed",
+        landing_path="/Volumes/dev/bronze/insideairbnb/listings__abc.csv.gz",
+    )
+    spark = StubSpark(rows=[landed])
+    store = ManifestStore(table_name=TEST_TABLE, spark=spark)
+
+    record = store.read_landed_by_identity(
+        "insideairbnb", "toronto", "2026-09-16", "csv.gz"
+    )
+
+    assert record["source_file_id"] == "a" * 64
+    assert record["landing_path"].endswith("listings__abc.csv.gz")
+    assert "processing_state = 'landed'" in spark.sql_log[-1]
+    for field in ("source_family", "source_entity_id", "source_version", "file_type"):
+        assert f"{field} = " in spark.sql_log[-1]
+
+
+def test_read_landed_by_identity_raises_when_no_landed_record_exists():
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[]))
+
+    with pytest.raises(ValueError, match="no landed manifest record"):
+        store.read_landed_by_identity("insideairbnb", "toronto", "2026-09-16", "csv.gz")
+
+
+def test_read_landed_by_identity_raises_for_ambiguous_hash_versions():
+    validated = apply_state_transition(_record(), "validated")
+    first = apply_state_transition(
+        validated, "landed", landing_path="/Volumes/dev/bronze/insideairbnb/a.csv.gz"
+    )
+    other = apply_state_transition(_record(file_hash_sha256="d" * 64), "validated")
+    second = apply_state_transition(
+        other, "landed", landing_path="/Volumes/dev/bronze/insideairbnb/b.csv.gz"
+    )
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[first, second]))
+
+    with pytest.raises(ValueError, match="2 landed manifest records found"):
+        store.read_landed_by_identity("insideairbnb", "toronto", "2026-09-16", "csv.gz")
+
+
+def test_read_landed_by_identity_requires_all_identity_fields():
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[]))
+
+    with pytest.raises(ValueError, match="file_type is required"):
+        store.read_landed_by_identity("insideairbnb", "toronto", "2026-09-16", " ")
+
+
+def test_read_landed_by_identity_requires_a_landing_path():
+    # The state machine itself never produces a landed record without a
+    # landing path, so simulate a corrupted row directly.
+    validated = apply_state_transition(_record(), "validated")
+    landed = apply_state_transition(
+        validated, "landed", landing_path="/Volumes/dev/bronze/insideairbnb/a.csv.gz"
+    )
+    broken = dict(landed, landing_path=None)
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[broken]))
+
+    with pytest.raises(ValueError, match="no landing_path"):
+        store.read_landed_by_identity("insideairbnb", "toronto", "2026-09-16", "csv.gz")
