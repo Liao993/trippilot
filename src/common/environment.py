@@ -27,6 +27,7 @@ LIVE_TABLES = {
     "silver_rejected": "trippilot_dev.silver.airbnb_listings_rejected",
     "quality_results": "trippilot_dev.ops.quality_results",
     "exclusion": "trippilot_dev.ops.exclusion",
+    "source_manifest": "trippilot_dev.ops.source_file_manifest",
 }
 
 

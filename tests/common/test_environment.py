@@ -87,9 +87,15 @@ def test_tables_resolve_individually_per_mode():
         "trippilot_dev.ops.quality_results_test"
     )
     assert resolve_table("exclusion", "test") == ("trippilot_dev.ops.exclusion_test")
+    assert resolve_table("source_manifest", "test") == (
+        "trippilot_dev.ops.source_file_manifest_test"
+    )
 
     assert resolve_table("bronze", "live") == (
         "trippilot_dev.bronze.airbnb_listings_bronze"
+    )
+    assert resolve_table("source_manifest", "live") == (
+        "trippilot_dev.ops.source_file_manifest"
     )
 
 
