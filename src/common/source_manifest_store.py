@@ -216,3 +216,59 @@ class ManifestStore:
                 f"{source_file_id}: landed manifest record has no landing_path"
             )
         return record
+
+    def read_landed_by_identity(
+        self,
+        source_family: str,
+        source_entity_id: str,
+        source_version: str,
+        file_type: str,
+    ) -> dict[str, Any]:
+        """Return the single landed manifest row for a source identity.
+
+        Bronze resolves its input file by stable source identity
+        (family/entity/version/type) instead of a hard-coded path. Exactly
+        one landed row must exist for that identity: a missing row, or
+        several hash-versioned landed rows, means the operator must
+        decide which source_file_id to process - this method never
+        guesses and never falls back to a root path.
+        """
+        for name, value in (
+            ("source_family", source_family),
+            ("source_entity_id", source_entity_id),
+            ("source_version", source_version),
+            ("file_type", file_type),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} is required to resolve a manifest record")
+        identity = f"{source_family}/{source_entity_id}/{source_version} ({file_type})"
+        columns = ", ".join(MANIFEST_FIELDS)
+        sql = (
+            f"SELECT {columns} FROM {self.table_name} "
+            f"WHERE source_family = {_sql_literal(source_family)} "
+            f"AND source_entity_id = {_sql_literal(source_entity_id)} "
+            f"AND source_version = {_sql_literal(source_version)} "
+            f"AND file_type = {_sql_literal(file_type)} "
+            "AND processing_state = 'landed'"
+        )
+        rows = self._require_spark().sql(sql).collect()
+        if not rows:
+            raise ValueError(
+                f"{identity}: no landed manifest record found in {self.table_name}"
+            )
+        if len(rows) > 1:
+            ids = ", ".join(
+                _row_to_dict(row).get("source_file_id", "?") for row in rows
+            )
+            raise ValueError(
+                f"{identity}: {len(rows)} landed manifest records found "
+                f"({ids}); pass an explicit source_file_id to choose one"
+            )
+        record = _row_to_dict(rows[0])
+        landing_path = record.get("landing_path")
+        if not isinstance(landing_path, str) or not landing_path.strip():
+            raise ValueError(
+                f"{record.get('source_file_id')}: landed manifest record has no "
+                "landing_path"
+            )
+        return record

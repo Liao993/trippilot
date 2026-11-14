@@ -164,3 +164,33 @@ def test_hyphenated_city_is_allowed():
     )
 
     assert df.write.calls[-1] == ("saveAsTable", VALID_TABLE)
+
+
+def test_merge_schema_option_is_added_only_when_requested():
+    df = _stub_df()
+
+    write_snapshot(
+        df,
+        VALID_TABLE,
+        VALID_CITY,
+        VALID_DATE,
+        "_city",
+        "_snapshot_date",
+        merge_schema=True,
+    )
+
+    assert ("option", "mergeSchema", "true") in df.write.calls
+    assert (
+        "option",
+        "replaceWhere",
+        "_city = 'toronto' AND _snapshot_date = '2026-09-16'",
+    ) in df.write.calls
+
+
+def test_default_write_does_not_request_schema_merge():
+    df = _stub_df()
+
+    write_snapshot(df, VALID_TABLE, VALID_CITY, VALID_DATE, "_city", "_snapshot_date")
+
+    assert ("option", "mergeSchema", "true") not in df.write.calls
+    assert df.write.calls[-1] == ("saveAsTable", VALID_TABLE)

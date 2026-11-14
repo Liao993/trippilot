@@ -41,3 +41,34 @@ def test_build_provenance_columns():
     assert result["run_id"] == "test-run"
     assert result["raw_path"].endswith("listings.csv.gz")
     assert "ingested_at_utc" in result
+
+
+def test_manifest_backed_fields_are_optional():
+    base = build_provenance_columns(
+        source="insideairbnb",
+        city="toronto",
+        snapshot_date="2026-09-16",
+        raw_path="/Volumes/dev/bronze/insideairbnb/landed/listings__abc.csv.gz",
+        run_id="run-1",
+    )
+    assert set(base) == {
+        "source",
+        "city",
+        "snapshot_date",
+        "raw_path",
+        "run_id",
+        "ingested_at_utc",
+    }
+
+    extended = build_provenance_columns(
+        source="insideairbnb",
+        city="toronto",
+        snapshot_date="2026-09-16",
+        raw_path="/Volumes/dev/bronze/insideairbnb/landed/listings__abc.csv.gz",
+        run_id="run-1",
+        source_file_id="a" * 64,
+        file_hash_sha256="b" * 64,
+    )
+    assert extended["source_file_id"] == "a" * 64
+    assert extended["file_hash_sha256"] == "b" * 64
+    assert set(extended) - set(base) == {"source_file_id", "file_hash_sha256"}
