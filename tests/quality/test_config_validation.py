@@ -198,6 +198,30 @@ def test_bronze_empty_provenance_column_names_are_reported():
     assert "bronze_listings.provenance_columns" in errors[0]
 
 
+def test_bronze_valid_corrected_file_policy_passes():
+    contract = {
+        "bronze_listings": {
+            **BRONZE_CONTRACT["bronze_listings"],
+            "corrected_file_policy": "explicit_reprocess_replace_slice",
+        }
+    }
+
+    assert validate_bronze_contract(contract) == []
+
+
+def test_bronze_empty_corrected_file_policy_is_reported():
+    contract = {
+        "bronze_listings": {
+            **BRONZE_CONTRACT["bronze_listings"],
+            "corrected_file_policy": "",
+        }
+    }
+
+    errors = validate_bronze_contract(contract)
+    assert len(errors) == 1
+    assert "bronze_listings.corrected_file_policy" in errors[0]
+
+
 def test_bronze_missing_table_section_is_reported():
     errors = validate_bronze_contract({})
     assert len(errors) == 1
