@@ -1,0 +1,31 @@
+bronze_calendar:
+  table: trippilot_dev.bronze.airbnb_calendar_bronze
+  source: insideairbnb
+  # Observed Toronto 2026-09-16 calendar.csv.gz (F06.1-T01): 5 columns,
+  # 8,048,251 rows, grain ONE ROW PER listing_id + date with zero
+  # duplicate keys; 22,050 listings x 365-366 forward nights starting
+  # 2026-09-17 (the day after the snapshot date). `available` is t/f;
+  # minimum_nights/maximum_nights are numeric strings; all values are
+  # preserved as strings in Bronze - no coercion before Silver (F09.1).
+  required_columns:
+    - listing_id
+    - date
+    - available
+    - minimum_nights
+    - maximum_nights
+  source_types: string
+  write_policy: replace_city_snapshot
+  # Same corrected-file policy as the listings contract (F05.3):
+  # immutable raw versions; one current Bronze slice per city/snapshot;
+  # a corrected file replaces the slice only through explicit
+  # reprocess authorization.
+  corrected_file_policy: explicit_reprocess_replace_slice
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256

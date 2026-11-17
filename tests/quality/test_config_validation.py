@@ -68,6 +68,26 @@ BRONZE_CONTRACT = {
     }
 }
 
+CALENDAR_CONTRACT = {
+    "bronze_calendar": {
+        "table": "trippilot_dev.bronze.airbnb_calendar_bronze",
+        "source": "insideairbnb",
+        "required_columns": ["listing_id", "date", "available"],
+        "source_types": "string",
+        "write_policy": "replace_city_snapshot",
+    }
+}
+
+REVIEWS_CONTRACT = {
+    "bronze_reviews": {
+        "table": "trippilot_dev.bronze.airbnb_reviews_bronze",
+        "source": "insideairbnb",
+        "required_columns": ["listing_id", "id", "date"],
+        "source_types": "string",
+        "write_policy": "replace_city_snapshot",
+    }
+}
+
 SILVER_CONTRACT = {
     "silver_listings": {
         "table": "trippilot_dev.silver.airbnb_listings_silver",
@@ -239,6 +259,65 @@ def test_bronze_empty_column_list_is_reported():
     assert any("required_columns" in error for error in errors)
 
 
+def test_valid_calendar_contract_passes():
+    assert (
+        validate_bronze_contract(
+            CALENDAR_CONTRACT,
+            label="contracts/airbnb/bronze_calendar.yml",
+            rules_key="bronze_calendar",
+        )
+        == []
+    )
+
+
+def test_valid_reviews_contract_passes():
+    assert (
+        validate_bronze_contract(
+            REVIEWS_CONTRACT,
+            label="contracts/airbnb/bronze_reviews.yml",
+            rules_key="bronze_reviews",
+        )
+        == []
+    )
+
+
+def test_calendar_missing_required_columns_is_reported():
+    broken = {"bronze_calendar": {"table": "a.b.c", "source": "insideairbnb"}}
+    errors = validate_bronze_contract(
+        broken,
+        label="contracts/airbnb/bronze_calendar.yml",
+        rules_key="bronze_calendar",
+    )
+    assert len(errors) == 1
+    assert "bronze_calendar.required_columns" in errors[0]
+
+
+def test_reviews_missing_table_is_reported():
+    broken = {
+        "bronze_reviews": {
+            **REVIEWS_CONTRACT["bronze_reviews"],
+            "table": "",
+        }
+    }
+    errors = validate_bronze_contract(
+        broken,
+        label="contracts/airbnb/bronze_reviews.yml",
+        rules_key="bronze_reviews",
+    )
+    assert len(errors) == 1
+    assert "bronze_reviews.table" in errors[0]
+
+
+def test_bronze_contract_reports_wrong_rules_key():
+    errors = validate_bronze_contract(
+        BRONZE_CONTRACT,
+        label="contracts/airbnb/bronze_calendar.yml",
+        rules_key="bronze_calendar",
+    )
+    assert len(errors) == 1
+    assert "Missing rules for table: bronze_calendar" in errors[0]
+
+
 def test_valid_silver_contract_passes():
     assert validate_silver_contract(SILVER_CONTRACT) == []
 
@@ -362,6 +441,20 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
         "  required_columns:\n"
         "    - id\n"
     )
+    valid_calendar_yml = (
+        "bronze_calendar:\n"
+        "  table: a.b.c\n"
+        "  source: insideairbnb\n"
+        "  required_columns:\n"
+        "    - listing_id\n"
+    )
+    valid_reviews_yml = (
+        "bronze_reviews:\n"
+        "  table: a.b.c\n"
+        "  source: insideairbnb\n"
+        "  required_columns:\n"
+        "    - listing_id\n"
+    )
     valid_silver_yml = (
         "silver_listings:\n"
         "  table: a.b.c\n"
@@ -383,11 +476,19 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
     )
     for rel in [
         "contracts/airbnb/bronze_listings.yml",
+        "contracts/airbnb/bronze_calendar.yml",
+        "contracts/airbnb/bronze_reviews.yml",
         "contracts/airbnb/silver_listings.yml",
     ]:
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / "contracts/airbnb/bronze_listings.yml").write_text(
         valid_bronze_yml, encoding="utf-8"
+    )
+    (tmp_path / "contracts/airbnb/bronze_calendar.yml").write_text(
+        valid_calendar_yml, encoding="utf-8"
+    )
+    (tmp_path / "contracts/airbnb/bronze_reviews.yml").write_text(
+        valid_reviews_yml, encoding="utf-8"
     )
     (tmp_path / "contracts/airbnb/silver_listings.yml").write_text(
         valid_silver_yml, encoding="utf-8"
@@ -411,6 +512,8 @@ def test_validate_config_files_reports_missing_file(tmp_path):
         "config/project.yml",
         "config/city_registry.yml",
         "contracts/airbnb/bronze_listings.yml",
+        "contracts/airbnb/bronze_calendar.yml",
+        "contracts/airbnb/bronze_reviews.yml",
         "contracts/airbnb/silver_listings.yml",
         "contracts/ops/source_file_manifest.yml",
     ]:

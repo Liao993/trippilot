@@ -1,0 +1,34 @@
+bronze_reviews:
+  table: trippilot_dev.bronze.airbnb_reviews_bronze
+  source: insideairbnb
+  # Observed Toronto 2026-09-16 reviews.csv.gz (F06.1-T01): 6 columns,
+  # 729,190 rows, grain ONE ROW PER listing_id + id (the review id is
+  # NOT unique on its own: 183 review ids are attached to 2-9 listings
+  # each - 839 extra rows with identical review content - and there are
+  # zero full-row duplicates). Dates span 2010-06-07..2026-09-18, all
+  # ISO YYYY-MM-DD with no blanks. All values are preserved as strings
+  # in Bronze - no coercion before Silver (F09.2); reviewer_name and
+  # comments are privacy-minimized downstream, never in Bronze.
+  required_columns:
+    - listing_id
+    - id
+    - date
+    - reviewer_id
+    - reviewer_name
+    - comments
+  source_types: string
+  write_policy: replace_city_snapshot
+  # Same corrected-file policy as the listings contract (F05.3):
+  # immutable raw versions; one current Bronze slice per city/snapshot;
+  # a corrected file replaces the slice only through explicit
+  # reprocess authorization.
+  corrected_file_policy: explicit_reprocess_replace_slice
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256
