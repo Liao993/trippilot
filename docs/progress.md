@@ -4,10 +4,10 @@ Concise, high-level record of verified state. Detailed task narratives live in t
 
 ## Roadmap position (Project Plan v29 / Build Guide v30)
 
-**F06.1 — Calendar and review source contracts: complete on `feature/f06-1-source-contracts` (tested commit `c1dacf8`, PR pending). Next: F06.2.**
+**F06.2 — separate calendar/review Bronze ingestion: complete on `feature/f06-2-bronze-ingestion` (tested commit `0a1419b`, PR pending). Next: F06.3.**
 
-- `main` @ `3fbebedd` (2026-11-17): includes the pre-F06 cleanup (PR #22 → `6f4dfa4`) and the plan/guide docs (PR #23).
-- Feature history: F02 foundation migration + run-mode isolation (PRs #11–#13); F03 CI baseline, contract/notebook validation, secret scanning (PRs #13–#15); F04 source manifest, acquisition/immutable landing, run controls (PRs #16–#18); F05 listings inspection/registration, manifest-backed Bronze, identity-aware reprocessing (PRs #19–#21, merge commits `289d281` / `093ee31` / `8deb9c8`).
+- `main` @ `c585d9f` (2026-11-17): includes the pre-F06 cleanup (PR #22 → `6f4dfa4`), the plan/guide docs (PR #23) and F06.1 source contracts (PR #24).
+- Feature history: F02 foundation migration + run-mode isolation (PRs #11–#13); F03 CI baseline, contract/notebook validation, secret scanning (PRs #13–#15); F04 source manifest, acquisition/immutable landing, run controls (PRs #16–#18); F05 listings inspection/registration, manifest-backed Bronze, identity-aware reprocessing (PRs #19–#21, merge commits `289d281` / `093ee31` / `8deb9c8`); F06.1 calendar/review source contracts (PR #24, merge `c585d9f`).
 - CI note: the workflow's push trigger covers `main` and `feature/add-ci` only — every other branch gets CI via the pull-request check or a manual `workflow_dispatch`.
 
 ## Environment (verified 2026-11-12; unchanged since)
@@ -32,14 +32,14 @@ Root files at `/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/`
 - **F04 — governed acquisition (PRs #16–#18):** `source_manifest.py` (17-field contract, deterministic `source_file_id` = SHA-256 over family|entity|version|file-type|content-hash, registered→validated→landed/failed state machine, credential-redacted errors); `source_acquisition.py` (approved `_incoming` staging, gzip signature + 2-GiB checks, hash-verified atomic never-overwrite landing, per-file failure isolation, reprocess from landed objects without re-download); `source_manifest_store.py` (`ManifestStore` MERGE keyed by `source_file_id`, immutable identity/metadata, operational-fields-only updates).
 - **F05 — listings end-to-end (PRs #19–#21):** header inspection with content-addressed schema fingerprints; manifest-backed Bronze (reads only the landing object; 8 provenance columns `_source`…`_file_hash_sha256`; atomic `replaceWhere`+`mergeSchema` slice replace); identity-aware skip/blocked/force decisions with prior-id audit trail; pre-write validation (hash/size, full gzip decompress, required columns, schema drift). Test-mode drills covered idempotent reruns, new-snapshot slices, corrected-file controlled replacement and failure isolation; `read_landed_by_identity` resolves a single landed record or raises on ambiguity.
 
-## F06.1 — Calendar and review source contracts (2026-11-17; complete on `feature/f06-1-source-contracts`, tested commit `c1dacf84ef13f35038be0066f762aa78cc8a2451`; PR pending)
+## F06.1 — Calendar and review source contracts (2026-11-17; complete on `feature/f06-1-source-contracts`, tested commit `c1dacf84ef13f35038be0066f762aa78cc8a2451`; merged via PR #24, merge commit `c585d9f`)
 
 Scope (F06.1-T01/T02): inspect `calendar.csv.gz` and `reviews.csv.gz` independently, register both in the shared F04 manifest, and create Bronze source contracts from the observed schemas. No Bronze writes (F06.2), no Silver (F08/F09).
 
 Observed grains (verified by profiling, never assumed):
 
 - **Calendar** — 5 columns `listing_id,date,available,minimum_nights,maximum_nights`; 8,048,251 rows; grain one row per `listing_id`+`date` with zero duplicate keys; 22,050 listings; date window 2026-09-17 → 2027-09-17; `available` ∈ {t,f}; no duplicate/blank header names. Schema version `calendar-sha256:eac60c6598969586`.
-- **Reviews** — 6 columns `listing_id,id,date,reviewer_id,reviewer_name,comments`; 729,190 rows; grain one row per `listing_id`+`id` — **the review `id` alone is NOT unique**: 183 ids are attached to 2–9 listings each (839 extra rows) with identical review content, and there are zero full-row duplicates. Dates 2010-06-07 → 2026-09-18, all ISO `YYYY-MM-DD`, no blank keys; 17,764 listings have reviews (4,286 of 22,050 have none). Schema version `detailed-reviews-sha256:246ea39b2dab730b`.
+- **Reviews** — 6 columns `listing_id,id,date,reviewer_id,reviewer_name,comments`; **729,202 rows** (F06.1 profiling recorded 729,190 — an undercount corrected in F06.2 by dual-parser verification: Spark multiLine+escape and Python `csv` both parse 729,202, and all (listing_id,id) pairs are unique); grain one row per `listing_id`+`id` — **the review `id` alone is NOT unique**: 183 ids are attached to 2–9 listings each (839 extra rows) with identical review content, and there are zero full-row duplicates. Dates 2010-06-07 → 2026-09-18, all ISO `YYYY-MM-DD`, no blank keys; 17,764 listings have reviews (4,286 of 22,050 have none). Schema version `detailed-reviews-sha256:246ea39b2dab730b`.
 - Both gzip streams fully decompress (291,714,020 / 207,510,679 bytes expanded).
 
 Snapshot derivation (evidence, not assumption): the calendar window starts 2026-09-17 — the day after the Inside Airbnb compile date — and its 22,050 `listing_id`s exactly equal the F05 listings Bronze set (zero orphans both directions); reviews' `listing_id`s are a subset of that same set; both files were uploaded together. Both files therefore belong to the **2026-09-16** publication batch. The operator should still confirm the official publication date alongside the licence confirmation below.
@@ -56,7 +56,28 @@ Verification:
 - Local gate on the tested tree: `ruff check` — only the EXE002 workspace-mode artifact (git records every file 100644; CI unaffected); `ruff format --check` clean; `python -m src.quality.config_validation` pass (7 files); `python -m src.quality.notebook_validation` pass; `pytest` **227 passed** (was 219).
 - Runtime (test mode only — isolated `ops.source_file_manifest_test`): staged copies hash-equal to the root files; both identities landed with the hashes/sizes/source_file_ids in the Governed source files section above; two distinct `source_file_id`s; Delta read-back `landed`; staged `_incoming` copies removed afterwards. No Bronze table was written; production tables unchanged (bronze 22,050 / control 1 / silver 22,050 / rejected 0); the live `ops.source_file_manifest` remains absent.
 - Licence: both files registered with the clearly-marked TEST-ONLY placeholder licence (F05.2 precedent) — production registration withheld, see blockers.
-- F06.2 design note: with listings, calendar and reviews all landed for identity `insideairbnb/toronto/2026-09-16` + `csv.gz`, `read_landed_by_identity` is now ambiguous (verified: it raises listing all three landed records). F06.2 must resolve per-dataset identities — explicit `source_file_id` selection (the F05.3 widget already exists) or per-dataset entity ids.
+- F06.2 design note: with listings, calendar and reviews all landed for identity `insideairbnb/toronto/2026-09-16` + `csv.gz`, `read_landed_by_identity` is now ambiguous (verified: it raises listing all three landed records). F06.2 must resolve per-dataset identities — explicit `source_file_id` selection (the F05.3 widget already exists) or per-dataset entity ids. (Resolved in F06.2: both notebooks resolve by explicit `source_file_id`.)
+
+## F06.2 — Separate calendar/review Bronze ingestion paths (2026-11-17; complete on `feature/f06-2-bronze-ingestion`, tested commit `0a1419bc67abe089903fc6684156538954316098`; PR pending)
+
+Scope (F06.2-T01/T02/T03): Bronze ingestion for both new datasets from their immutable manifest landing objects — raw-string preservation, contract-driven row-quality marking with retention, separate data products, per-file reconciliation. No Silver, no joins, no control-table rows (F06.3 resolves the city/snapshot key collision).
+
+Changes (tested commit `0a1419b`, 10 files):
+
+- `src/common/environment.py` — LIVE_TABLES keys `calendar_bronze`/`reviews_bronze` → `trippilot_dev.bronze.airbnb_calendar_bronze` / `airbnb_reviews_bronze` (test mode → `*_test`).
+- `contracts/airbnb/bronze_calendar.yml` + `bronze_reviews.yml` — `row_validation` blocks from the observed grains (required fields + ISO-date fields).
+- `src/quality/config_validation.py` — enforces the `row_validation` shape (mapping; non-empty string list; date fields ⊆ required).
+- `src/airbnb/row_quality.py` (new) — `extract_row_validation_policy` (pure, raises TypeError on malformed policy) + `annotate_row_quality` (native Spark `_quality_status`/`_quality_reason`; rows never dropped or cast; pyspark imported in-function so CI stays Spark-free).
+- `notebooks/bronze/airbnb/ingest_airbnb_calendar.ipynb` + `ingest_airbnb_reviews.ipynb` (new, 18 cells each, listings-notebook flow): widget-driven explicit `source_file_id`; manifest resolve + hash/size + full-gzip + header-fingerprint + required-column gates; dataset-scoped rerun guard against the slice's `_source_file_id` (same → skip, different → blocked, `force_reload` authorizes); string-preserving read (header on, inferSchema off, multiLine + escaped quotes); quality annotation; 8 provenance columns; atomic `write_snapshot` slice replace; per-identity reconciliation.
+- Tests +15 (row_quality incl. both real contracts; config-validation `row_validation` cases; environment key assertions). Suite **242 passed** (was 227).
+
+Runtime evidence (test mode only — `bronze.airbnb_calendar_bronze_test` / `bronze.airbnb_reviews_bronze_test`; live calendar/reviews tables do NOT exist):
+
+- Calendar: 8,048,251 raw = slice = identity rows (matches F06.1 exactly); 0 invalid; one run id `e07a5ef0daca4cafafa5cd309901a388`; schema = 5 source + `_quality_reason`/`_quality_status` + 8 provenance columns, ALL string; Delta version 0 (`WRITE`); `available` ∈ {t,f}; dates/night counts preserved as raw strings.
+- Reviews: **729,202** raw rows — dual-parser verified (Spark multiLine+escape and Python `csv` both 729,202; all (listing_id,id) pairs unique; physical lines 743,664); 3,590 rows carry embedded newline/quote in `comments` and parse intact (spot-checked); 0 invalid; one run id `a204cdbf3dcb4cd6bc8f32c10de573c7`; all-string schema; Delta version 0.
+- Guard drills (notebook-mirrored logic): exact same-file rerun → skip with NO new Delta version on either table; a different `source_file_id` for the same slice → blocked with an explicit error; `force_reload=true` → load authorized. `id`-alone non-uniqueness re-verified under the corrected count: 728,363 distinct ids vs 729,202 rows (839 extra).
+- F05 production outputs unchanged after both runs: bronze 22,050 / control 1 / silver 22,050 / rejected 0 / quality 0.
+- Local gate on the tested tree: `ruff check` only the EXE002 workspace artifact; `ruff format --check` clean (3 new files formatted); config validation pass (7 files); notebook validation pass; pytest **242 passed**.
 
 ## Standing conventions and gotchas
 
@@ -72,8 +93,8 @@ Verification:
 
 - **F05.1 licence verification (open; gates ALL production manifest registration):** the operator must confirm the current official Inside Airbnb licence and attribution (insideairbnb.com/get-the-data) before any live manifest row is written — listings, calendar and reviews alike. Manifest identity/metadata is immutable once written, so placeholder values must never enter the live table. The landed objects are content-addressed and already in place, so live registration completes idempotently the moment the values are confirmed.
 - Notion child pages: PR URL, tested SHA, merge SHA and Actions run URL to be pasted by the operator after each merge (this file carries the SHAs). The live `ops.source_file_manifest` table is created by the first real acquisition run, never by tests.
-- Test fixtures under `source_files/_test_fixtures/f05-3` and drill rows in the `_test` manifest/control tables are runtime evidence and may be cleaned up after review.
+- Test fixtures under `source_files/_test_fixtures/f05-3` and drill rows in the `_test` manifest/control tables are runtime evidence and may be cleaned up after review. The F06.2 `_test` Bronze tables (`airbnb_calendar_bronze_test` 8,048,251 rows / `airbnb_reviews_bronze_test` 729,202 rows) are runtime evidence and may be dropped after review.
 
 ## Next task
 
-Open/merge the F06.1 PR (`feature/f06-1-source-contracts`, tested commit `c1dacf8`), then start **F06.2 — separate Bronze ingestion paths** from the contracts and landed identities above (per-dataset identity resolution, string-preserving parse, per-file counts and failure isolation). Live-mode runs stay withheld until the licence confirmation.
+Open/merge the F06.2 PR (`feature/f06-2-bronze-ingestion`, tested commit `0a1419b`), then start **F06.3 — dataset-level ingestion controls**: per-dataset control-table keys resolving the city/snapshot key collision, file-level row counts and failure isolation for the three datasets. Live-mode runs stay withheld until the licence confirmation.
