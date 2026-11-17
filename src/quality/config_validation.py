@@ -24,8 +24,19 @@ CONFIG_FILES: dict[str, str] = {
     "config/project.yml": "project",
     "config/city_registry.yml": "city_registry",
     "contracts/airbnb/bronze_listings.yml": "bronze_contract",
+    "contracts/airbnb/bronze_calendar.yml": "bronze_contract",
+    "contracts/airbnb/bronze_reviews.yml": "bronze_contract",
     "contracts/airbnb/silver_listings.yml": "silver_contract",
     "contracts/ops/source_file_manifest.yml": "source_manifest_contract",
+}
+
+# Each Bronze contract file carries exactly one top-level rules key named
+# after its table (bronze_listings, bronze_calendar, bronze_reviews); the
+# shared validator needs to know which key to read (F06.1).
+BRONZE_CONTRACT_RULES_KEYS: dict[str, str] = {
+    "contracts/airbnb/bronze_listings.yml": "bronze_listings",
+    "contracts/airbnb/bronze_calendar.yml": "bronze_calendar",
+    "contracts/airbnb/bronze_reviews.yml": "bronze_reviews",
 }
 
 
@@ -99,34 +110,39 @@ def validate_city_registry(
 def validate_bronze_contract(
     content: dict[str, Any],
     label: str = "contracts/airbnb/bronze_listings.yml",
+    rules_key: str = "bronze_listings",
 ) -> list[str]:
-    """Check the table, source and column information of the Bronze contract."""
+    """Check the table, source and column information of a Bronze contract.
+
+    rules_key is the contract's single top-level key (bronze_listings,
+    bronze_calendar, bronze_reviews); each file is validated against its
+    own key so the error messages name the table that failed.
+    """
     try:
-        rules = get_table_rules(content, "bronze_listings")
+        rules = get_table_rules(content, rules_key)
     except TypeError as exc:
         return [f"{label}: {exc}"]
 
     errors: list[str] = []
     if not _is_nonempty_string(rules.get("table")):
-        errors.append(f"{label}: 'bronze_listings.table' must be a non-empty string")
+        errors.append(f"{label}: '{rules_key}.table' must be a non-empty string")
     if not _is_nonempty_string(rules.get("source")):
-        errors.append(f"{label}: 'bronze_listings.source' must be a non-empty string")
+        errors.append(f"{label}: '{rules_key}.source' must be a non-empty string")
     if not _is_nonempty_string_list(rules.get("required_columns")):
         errors.append(
-            f"{label}: 'bronze_listings.required_columns' must be a non-empty "
+            f"{label}: '{rules_key}.required_columns' must be a non-empty "
             "list of column names"
         )
     provenance = rules.get("provenance_columns")
     if provenance is not None and not _is_nonempty_string_list(provenance):
         errors.append(
-            f"{label}: 'bronze_listings.provenance_columns' must be a non-empty "
+            f"{label}: '{rules_key}.provenance_columns' must be a non-empty "
             "list of column names"
         )
     policy = rules.get("corrected_file_policy")
     if policy is not None and not _is_nonempty_string(policy):
         errors.append(
-            f"{label}: 'bronze_listings.corrected_file_policy' must be a "
-            "non-empty string"
+            f"{label}: '{rules_key}.corrected_file_policy' must be a non-empty string"
         )
     return errors
 
@@ -308,7 +324,14 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
             errors.append(f"{label}: file is empty; a populated mapping is required")
             continue
 
-        errors.extend(VALIDATORS[kind](content, label))
+        if kind == "bronze_contract":
+            errors.extend(
+                validate_bronze_contract(
+                    content, label, rules_key=BRONZE_CONTRACT_RULES_KEYS[rel_path]
+                )
+            )
+        else:
+            errors.extend(VALIDATORS[kind](content, label))
 
     if errors:
         raise ValueError(
@@ -317,7 +340,7 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
 
 
 def main() -> None:
-    """Validate the five populated files from the repository root."""
+    """Validate every populated file from the repository root."""
     validate_config_files()
     print("All populated YAML configuration and contract files are valid.")
 

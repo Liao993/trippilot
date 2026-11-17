@@ -85,8 +85,14 @@ def check_required_columns(
     return [column for column in required_columns if column not in observed]
 
 
-def inspect_csv_gz_header(path) -> dict:
+def inspect_csv_gz_header(path, schema_label: str = "detailed-listings") -> dict:
     """Inspect the gzip CSV header at path; return registration evidence.
+
+    schema_label names the source dataset in the derived schema_version
+    ("detailed-listings" for the listings file; F06.1 passes "calendar"
+    and "detailed-reviews" for the calendar and review files), so a
+    manifest never describes a calendar or review file as a listings
+    schema.
 
     Returns a mapping with:
     - header_line: the observed first line without the trailing newline
@@ -98,6 +104,8 @@ def inspect_csv_gz_header(path) -> dict:
     - schema_version: manifest schema_version derived from the fingerprint
     - byte_size: compressed file size in bytes
     """
+    if not isinstance(schema_label, str) or not schema_label.strip():
+        raise ValueError("schema_label must be a non-empty string")
     header_line = read_csv_gz_header_line(path)
     columns = next(csv.reader([header_line]))
     counts = Counter(columns)
@@ -111,6 +119,6 @@ def inspect_csv_gz_header(path) -> dict:
         "duplicate_columns": duplicates,
         "missing_columns": missing,
         "schema_fingerprint": f"sha256:{fingerprint}",
-        "schema_version": f"detailed-listings-sha256:{fingerprint[:16]}",
+        "schema_version": f"{schema_label}-sha256:{fingerprint[:16]}",
         "byte_size": Path(path).stat().st_size,
     }

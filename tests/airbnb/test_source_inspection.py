@@ -83,6 +83,36 @@ def test_clean_header_produces_no_problem_reports(tmp_path):
     assert result["missing_columns"] == []
 
 
+# --- F06.1: schema_version labels the source dataset ------------------
+
+
+def test_schema_version_uses_the_requested_schema_label(tmp_path):
+    source = _write_gzip_csv(tmp_path / "calendar.csv.gz", "listing_id,date,available")
+
+    result = inspect_csv_gz_header(source, schema_label="calendar")
+
+    assert result["schema_version"] == (
+        "calendar-sha256:" + result["schema_fingerprint"][7:23]
+    )
+
+
+def test_schema_version_accepts_the_detailed_reviews_label(tmp_path):
+    source = _write_gzip_csv(tmp_path / "reviews.csv.gz", "listing_id,id,date")
+
+    result = inspect_csv_gz_header(source, schema_label="detailed-reviews")
+
+    assert result["schema_version"] == (
+        "detailed-reviews-sha256:" + result["schema_fingerprint"][7:23]
+    )
+
+
+def test_schema_label_rejects_blank_labels(tmp_path):
+    source = _write_gzip_csv(tmp_path / "listings.csv.gz", "id,name")
+
+    with pytest.raises(ValueError, match="schema_label"):
+        inspect_csv_gz_header(source, schema_label="   ")
+
+
 @pytest.mark.parametrize(
     "case",
     [
