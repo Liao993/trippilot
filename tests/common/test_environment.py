@@ -90,12 +90,24 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("source_manifest", "test") == (
         "trippilot_dev.ops.source_file_manifest_test"
     )
+    assert resolve_table("calendar_bronze", "test") == (
+        "trippilot_dev.bronze.airbnb_calendar_bronze_test"
+    )
+    assert resolve_table("reviews_bronze", "test") == (
+        "trippilot_dev.bronze.airbnb_reviews_bronze_test"
+    )
 
     assert resolve_table("bronze", "live") == (
         "trippilot_dev.bronze.airbnb_listings_bronze"
     )
     assert resolve_table("source_manifest", "live") == (
         "trippilot_dev.ops.source_file_manifest"
+    )
+    assert resolve_table("calendar_bronze", "live") == (
+        "trippilot_dev.bronze.airbnb_calendar_bronze"
+    )
+    assert resolve_table("reviews_bronze", "live") == (
+        "trippilot_dev.bronze.airbnb_reviews_bronze"
     )
 
 

@@ -28,6 +28,11 @@ LIVE_TABLES = {
     "quality_results": "trippilot_dev.ops.quality_results",
     "exclusion": "trippilot_dev.ops.exclusion",
     "source_manifest": "trippilot_dev.ops.source_file_manifest",
+    # F06.2: separate Bronze data products for the calendar and review
+    # datasets - never conflated with the listings table. Test mode
+    # resolves the isolated *_test variants via the shared rules above.
+    "calendar_bronze": "trippilot_dev.bronze.airbnb_calendar_bronze",
+    "reviews_bronze": "trippilot_dev.bronze.airbnb_reviews_bronze",
 }
 
 

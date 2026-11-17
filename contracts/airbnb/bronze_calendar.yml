@@ -20,6 +20,17 @@ bronze_calendar:
   # a corrected file replaces the slice only through explicit
   # reprocess authorization.
   corrected_file_policy: explicit_reprocess_replace_slice
+  # Row-level quality policy (F06.2-T03), from the observed grain: the
+  # identity fields listing_id+date must be present and non-blank, and
+  # date must be ISO YYYY-MM-DD as read. Invalid rows are RETAINED in
+  # Bronze with _quality_status/_quality_reason - never dropped or
+  # coerced before Silver (F09.1).
+  row_validation:
+    required_fields:
+      - listing_id
+      - date
+    date_fields:
+      - date
   provenance_columns:
     - _source
     - _city
