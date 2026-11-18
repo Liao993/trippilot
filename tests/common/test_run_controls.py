@@ -251,6 +251,124 @@ def test_decide_action_requires_a_source_file_id():
         decide_ingestion_action([], "toronto", "2026-09-16", "  ")
 
 
+# --- F06.3: dataset-scoped ingestion decisions -------------------------
+
+
+def test_decide_action_same_dataset_same_file_skips():
+    controls = [_success_control(dataset="calendar", source_file_id="a" * 64)]
+
+    action = decide_ingestion_action(
+        controls, "toronto", "2026-09-16", "a" * 64, dataset="calendar"
+    )
+
+    assert action == "skip"
+
+
+def test_decide_action_same_dataset_corrected_file_blocked():
+    controls = [_success_control(dataset="calendar", source_file_id="a" * 64)]
+
+    with pytest.raises(ValueError, match="calendar/toronto/2026-09-16"):
+        decide_ingestion_action(
+            controls, "toronto", "2026-09-16", "b" * 64, dataset="calendar"
+        )
+
+
+def test_decide_action_same_dataset_force_allows_reprocess():
+    controls = [_success_control(dataset="reviews", source_file_id="a" * 64)]
+
+    action = decide_ingestion_action(
+        controls,
+        "toronto",
+        "2026-09-16",
+        "b" * 64,
+        force_reload=True,
+        dataset="reviews",
+    )
+
+    assert action == "load"
+
+
+def test_decide_action_new_snapshot_loads_for_scoped_dataset():
+    controls = [_success_control(dataset="calendar", source_file_id="a" * 64)]
+
+    action = decide_ingestion_action(
+        controls, "toronto", "2026-12-15", "b" * 64, dataset="calendar"
+    )
+
+    assert action == "load"
+
+
+def test_decide_action_ignores_other_datasets_rows():
+    """A calendar success must never block or skip the reviews dataset."""
+    controls = [
+        _success_control(dataset="calendar", source_file_id="a" * 64),
+        _success_control(dataset="listings", source_file_id="a" * 64),
+    ]
+
+    action = decide_ingestion_action(
+        controls, "toronto", "2026-09-16", "b" * 64, dataset="reviews"
+    )
+
+    assert action == "load"
+
+
+def test_default_scope_includes_legacy_untagged_rows():
+    """Untagged rows are pre-F06.3 listings history: the default scope
+    must keep reading them exactly as F05 did."""
+    controls = [_success_control(source_file_id="a" * 64)]  # no dataset tag
+
+    assert (
+        decide_ingestion_action(controls, "toronto", "2026-09-16", "a" * 64) == "skip"
+    )
+    with pytest.raises(ValueError, match="Corrected or replaced source file"):
+        decide_ingestion_action(controls, "toronto", "2026-09-16", "b" * 64)
+
+
+def test_default_scope_excludes_tagged_rows():
+    """A tagged calendar success is invisible to the listings scope."""
+    controls = [_success_control(dataset="calendar", source_file_id="a" * 64)]
+
+    action = decide_ingestion_action(controls, "toronto", "2026-09-16", "a" * 64)
+
+    assert action == "load"
+
+
+def test_untagged_rows_never_leak_into_other_datasets():
+    """Legacy listings rows must not block a calendar/reviews decision."""
+    controls = [
+        _success_control(source_file_id="a" * 64),  # legacy listings row
+    ]
+
+    assert (
+        decide_ingestion_action(
+            controls, "toronto", "2026-09-16", "b" * 64, dataset="reviews"
+        )
+        == "load"
+    )
+
+
+def test_build_control_record_carries_dataset_tag():
+    record = build_control_record(
+        city="toronto",
+        snapshot_date="2026-09-16",
+        run_id="run-123",
+        status="success",
+        row_count=10,
+        dataset="reviews",
+    )
+
+    assert record["dataset"] == "reviews"
+
+    legacy = build_control_record(
+        city="toronto",
+        snapshot_date="2026-09-16",
+        run_id="run-124",
+        status="success",
+        row_count=10,
+    )
+    assert legacy["dataset"] is None
+
+
 def test_latest_successful_source_file_id_picks_newest_completed():
     controls = [
         _success_control(source_file_id="a" * 64, completed_at_utc="2026-11-13"),

@@ -33,6 +33,12 @@ LIVE_TABLES = {
     # resolves the isolated *_test variants via the shared rules above.
     "calendar_bronze": "trippilot_dev.bronze.airbnb_calendar_bronze",
     "reviews_bronze": "trippilot_dev.bronze.airbnb_reviews_bronze",
+    # F06.3: per-dataset ingestion-control tables. The listings
+    # control table above and its history stay untouched; calendar and
+    # reviews record their run outcomes in their own tables so one
+    # dataset's rows can never influence another's decision.
+    "calendar_control": "trippilot_dev.bronze.airbnb_calendar_ingestion_control",
+    "reviews_control": "trippilot_dev.bronze.airbnb_reviews_ingestion_control",
 }
 
 
