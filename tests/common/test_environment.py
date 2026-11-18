@@ -96,6 +96,12 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("reviews_bronze", "test") == (
         "trippilot_dev.bronze.airbnb_reviews_bronze_test"
     )
+    assert resolve_table("calendar_control", "test") == (
+        "trippilot_dev.bronze.airbnb_calendar_ingestion_control_test"
+    )
+    assert resolve_table("reviews_control", "test") == (
+        "trippilot_dev.bronze.airbnb_reviews_ingestion_control_test"
+    )
 
     assert resolve_table("bronze", "live") == (
         "trippilot_dev.bronze.airbnb_listings_bronze"
@@ -108,6 +114,12 @@ def test_tables_resolve_individually_per_mode():
     )
     assert resolve_table("reviews_bronze", "live") == (
         "trippilot_dev.bronze.airbnb_reviews_bronze"
+    )
+    assert resolve_table("calendar_control", "live") == (
+        "trippilot_dev.bronze.airbnb_calendar_ingestion_control"
+    )
+    assert resolve_table("reviews_control", "live") == (
+        "trippilot_dev.bronze.airbnb_reviews_ingestion_control"
     )
 
 

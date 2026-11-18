@@ -8,6 +8,12 @@ Since F05.3 the decision is identity-aware: it distinguishes an exact
 same-file retry (safe skip) from a corrected source file (blocked
 until an explicit reprocess authorization) and records failures
 against the run's control row.
+
+Since F06.3 the decision is also dataset-scoped: the calendar and
+review datasets keep their own control tables (the listings table and
+its history are untouched), and a control row is only ever read in
+its own dataset's scope - legacy untagged rows count as listings
+history and never leak into another dataset's decision.
 """
 
 import re
@@ -60,12 +66,16 @@ def build_control_record(
     status: str,
     row_count: int = 0,
     error_message: str | None = None,
+    dataset: str | None = None,
 ) -> dict[str, Any]:
     """
     Build one ingestion-control record.
 
     This record is written to the control table before and after ingestion.
-    It gives the pipeline an audit trail: what ran, when, and whether it worked.
+    It gives the pipeline an audit trail: what ran, when, and whether it
+    worked. Since F06.3 the optional dataset tag records which data
+    product a run belongs to (listings/calendar/reviews); legacy records
+    have no tag and count as listings history.
     """
     return {
         "city": city,
@@ -74,7 +84,22 @@ def build_control_record(
         "status": status,
         "row_count": row_count,
         "error_message": error_message,
+        "dataset": dataset,
     }
+
+
+def _in_dataset_scope(control: dict[str, Any], dataset: str) -> bool:
+    """Whether a control row belongs to the given dataset's scope (F06.3).
+
+    A row tagged with a dataset belongs to that dataset only. Untagged
+    rows are legacy: before F06.3 the listings dataset was the only
+    writer of control records, so an untagged row counts as listings
+    history and never leaks into another dataset's scope.
+    """
+    row_dataset = control.get("dataset")
+    if row_dataset is None:
+        return dataset == "listings"
+    return row_dataset == dataset
 
 
 def decide_ingestion_action(
@@ -83,8 +108,16 @@ def decide_ingestion_action(
     snapshot_date: str,
     source_file_id: str,
     force_reload: bool = False,
+    dataset: str = "listings",
 ) -> str:
     """Decide the ingestion action for one source-file identity (F05.3).
+
+    Since F06.3 the decision is scoped to one dataset. Calendar and
+    reviews have their own control tables, and the explicit dataset
+    scope additionally guarantees a tagged row never leaks into
+    another dataset's decision, and a legacy untagged row is only ever
+    read as listings history. The default scope keeps the F05
+    listings behavior byte-identical.
 
     Rules, aligned with the replace_city_snapshot Bronze contract:
     - No successful load for this city/snapshot -> "load": a first load
@@ -111,6 +144,7 @@ def decide_ingestion_action(
         if control.get("city") == city
         and control.get("snapshot_date") == snapshot_date
         and control.get("status") == "success"
+        and _in_dataset_scope(control, dataset)
     ]
 
     if not successful:
@@ -128,7 +162,7 @@ def decide_ingestion_action(
         return "load"
 
     raise ValueError(
-        f"Corrected or replaced source file for {city}/{snapshot_date}: the "
+        f"Corrected or replaced source file for {dataset}/{city}/{snapshot_date}: the "
         f"successful load used source_file_id {prior_id or '<legacy, no identity>'}, "
         f"but the selected file is {source_file_id}. A corrected file needs an "
         "explicit reprocess: set force_reload=true to authorize replacing "

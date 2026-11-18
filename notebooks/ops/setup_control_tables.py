@@ -25,6 +25,29 @@ CREATE TABLE IF NOT EXISTS trippilot_dev.bronze.airbnb_ingestion_control (
   error_message STRING
 ) USING DELTA
 ''')
+
+# F06.3: per-dataset ingestion-control tables for the calendar and
+# review data products. The listings control table above is NOT
+# altered: it keeps its original schema and history. Every row in the
+# new tables carries an explicit dataset tag, the exact source-file
+# identity it processed, and - for a controlled reprocess - the
+# identity it replaced.
+spark.sql('''
+CREATE TABLE IF NOT EXISTS trippilot_dev.bronze.airbnb_calendar_ingestion_control (
+  city STRING, snapshot_date STRING, run_id STRING, status STRING,
+  row_count LONG, started_at_utc STRING, completed_at_utc STRING,
+  error_message STRING, source_file_id STRING, prior_source_file_id STRING,
+  dataset STRING
+) USING DELTA
+''')
+spark.sql('''
+CREATE TABLE IF NOT EXISTS trippilot_dev.bronze.airbnb_reviews_ingestion_control (
+  city STRING, snapshot_date STRING, run_id STRING, status STRING,
+  row_count LONG, started_at_utc STRING, completed_at_utc STRING,
+  error_message STRING, source_file_id STRING, prior_source_file_id STRING,
+  dataset STRING
+) USING DELTA
+''')
 spark.sql('''
 CREATE TABLE IF NOT EXISTS trippilot_dev.ops.quality_results (
   run_id STRING, source STRING, city STRING, snapshot_date STRING,
