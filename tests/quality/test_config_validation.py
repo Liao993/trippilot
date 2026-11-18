@@ -318,6 +318,102 @@ def test_bronze_contract_reports_wrong_rules_key():
     assert "Missing rules for table: bronze_calendar" in errors[0]
 
 
+def test_calendar_valid_row_validation_passes():
+    contract = {
+        "bronze_calendar": {
+            **CALENDAR_CONTRACT["bronze_calendar"],
+            "row_validation": {
+                "required_fields": ["listing_id", "date"],
+                "date_fields": ["date"],
+            },
+        }
+    }
+
+    assert (
+        validate_bronze_contract(
+            contract,
+            label="contracts/airbnb/bronze_calendar.yml",
+            rules_key="bronze_calendar",
+        )
+        == []
+    )
+
+
+def test_reviews_row_validation_not_a_mapping_is_reported():
+    contract = {
+        "bronze_reviews": {
+            **REVIEWS_CONTRACT["bronze_reviews"],
+            "row_validation": ["listing_id"],
+        }
+    }
+
+    errors = validate_bronze_contract(
+        contract,
+        label="contracts/airbnb/bronze_reviews.yml",
+        rules_key="bronze_reviews",
+    )
+    assert len(errors) == 1
+    assert "bronze_reviews.row_validation" in errors[0]
+    assert "must be a mapping" in errors[0]
+
+
+def test_row_validation_empty_required_fields_is_reported():
+    contract = {
+        "bronze_calendar": {
+            **CALENDAR_CONTRACT["bronze_calendar"],
+            "row_validation": {"required_fields": [], "date_fields": ["date"]},
+        }
+    }
+
+    errors = validate_bronze_contract(
+        contract,
+        label="contracts/airbnb/bronze_calendar.yml",
+        rules_key="bronze_calendar",
+    )
+    assert len(errors) == 1
+    assert "row_validation.required_fields" in errors[0]
+
+
+def test_row_validation_bad_date_fields_type_is_reported():
+    contract = {
+        "bronze_reviews": {
+            **REVIEWS_CONTRACT["bronze_reviews"],
+            "row_validation": {
+                "required_fields": ["listing_id", "id", "date"],
+                "date_fields": "date",
+            },
+        }
+    }
+
+    errors = validate_bronze_contract(
+        contract,
+        label="contracts/airbnb/bronze_reviews.yml",
+        rules_key="bronze_reviews",
+    )
+    assert len(errors) == 1
+    assert "row_validation.date_fields" in errors[0]
+
+
+def test_row_validation_date_fields_must_be_subset_is_reported():
+    contract = {
+        "bronze_calendar": {
+            **CALENDAR_CONTRACT["bronze_calendar"],
+            "row_validation": {
+                "required_fields": ["listing_id"],
+                "date_fields": ["date"],
+            },
+        }
+    }
+
+    errors = validate_bronze_contract(
+        contract,
+        label="contracts/airbnb/bronze_calendar.yml",
+        rules_key="bronze_calendar",
+    )
+    assert len(errors) == 1
+    assert "subset of required_fields" in errors[0]
+
+
 def test_valid_silver_contract_passes():
     assert validate_silver_contract(SILVER_CONTRACT) == []
 

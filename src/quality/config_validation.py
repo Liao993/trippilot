@@ -144,6 +144,36 @@ def validate_bronze_contract(
         errors.append(
             f"{label}: '{rules_key}.corrected_file_policy' must be a non-empty string"
         )
+
+    # Optional row-level quality policy (F06.2-T03): when a Bronze
+    # contract declares one, its shape is enforced here so the
+    # ingestion notebooks can consume it without hard-coded fields.
+    row_validation = rules.get("row_validation")
+    if row_validation is not None:
+        if not isinstance(row_validation, dict):
+            errors.append(f"{label}: '{rules_key}.row_validation' must be a mapping")
+        else:
+            if not _is_nonempty_string_list(row_validation.get("required_fields")):
+                errors.append(
+                    f"{label}: '{rules_key}.row_validation.required_fields' "
+                    "must be a non-empty list of column names"
+                )
+            date_fields = row_validation.get("date_fields")
+            if date_fields is not None and not _is_nonempty_string_list(date_fields):
+                errors.append(
+                    f"{label}: '{rules_key}.row_validation.date_fields' must "
+                    "be a non-empty list of column names"
+                )
+            required_fields = row_validation.get("required_fields")
+            if (
+                _is_nonempty_string_list(required_fields)
+                and _is_nonempty_string_list(date_fields)
+                and any(field not in required_fields for field in date_fields)
+            ):
+                errors.append(
+                    f"{label}: '{rules_key}.row_validation.date_fields' must "
+                    "be a subset of required_fields"
+                )
     return errors
 
 
