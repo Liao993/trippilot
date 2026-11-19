@@ -38,9 +38,9 @@ def _source_root(tmp_path):
     return root
 
 
-def _incoming(tmp_path, name="listings.csv.gz", text=CSV_GZ_TEXT):
+def _staged(tmp_path, name="listings.csv.gz", text=CSV_GZ_TEXT):
     return _write_gzip(
-        _source_root(tmp_path) / "_incoming" / "insideairbnb" / "toronto" / name,
+        _source_root(tmp_path) / "_staging" / "insideairbnb" / "toronto" / name,
         text,
     )
 
@@ -133,7 +133,7 @@ def _identity(record):
 
 
 def test_successful_acquire_persists_a_landed_manifest_row(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
 
@@ -149,7 +149,7 @@ def test_successful_acquire_persists_a_landed_manifest_row(tmp_path):
 
 
 def test_duplicate_registration_is_idempotent_and_returns_existing(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     first = _acquire(source, landing_root, store)
@@ -164,7 +164,7 @@ def test_duplicate_registration_is_idempotent_and_returns_existing(tmp_path):
 
 
 def test_failed_attempt_is_visible_and_a_controlled_retry_lands(tmp_path, monkeypatch):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
 
@@ -197,13 +197,13 @@ def test_failed_attempt_is_visible_and_a_controlled_retry_lands(tmp_path, monkey
     assert len(store.rows) == 1
 
 
-def test_reprocess_resolves_the_landing_path_without_the_incoming_file(tmp_path):
-    source = _incoming(tmp_path)
+def test_reprocess_resolves_the_landing_path_without_the_staged_file(tmp_path):
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     landed = _acquire(source, landing_root, store)
 
-    # Recovery scenario: the staged incoming file is gone for good.
+    # Recovery scenario: the staged file is gone for good.
     source.unlink()
 
     record = reprocess_source_file(_identity(landed), store)
@@ -214,7 +214,7 @@ def test_reprocess_resolves_the_landing_path_without_the_incoming_file(tmp_path)
 
 
 def test_reprocess_never_copies_or_downloads(tmp_path, monkeypatch):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     landed = _acquire(source, landing_root, store)
@@ -230,7 +230,7 @@ def test_reprocess_never_copies_or_downloads(tmp_path, monkeypatch):
 
 
 def test_verify_existing_checks_the_landed_hash_by_id(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     landed = _acquire(source, landing_root, store)
@@ -248,7 +248,7 @@ def test_verify_existing_checks_the_landed_hash_by_id(tmp_path):
 
 
 def test_reprocess_rejects_unknown_identity(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     landed = _acquire(source, landing_root, store)
@@ -260,7 +260,7 @@ def test_reprocess_rejects_unknown_identity(tmp_path):
 
 
 def test_reprocess_rejects_non_landed_records(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     record = _acquire(source, landing_root, store)
@@ -284,7 +284,7 @@ def test_reprocess_requires_the_full_identity(tmp_path):
 
 
 def test_verify_landed_record_rejects_size_and_missing_file_problems(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
     landed = _acquire(source, landing_root, store)
@@ -299,8 +299,8 @@ def test_verify_landed_record_rejects_size_and_missing_file_problems(tmp_path):
 
 
 def test_one_files_failure_never_changes_another_files_status(tmp_path):
-    good = _incoming(tmp_path, name="listings.csv.gz")
-    bad = _incoming(tmp_path, name="reviews.csv.gz")
+    good = _staged(tmp_path, name="listings.csv.gz")
+    bad = _staged(tmp_path, name="reviews.csv.gz")
     bad.write_bytes(b"plain text, not gzip")  # wrong signature
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
@@ -322,10 +322,10 @@ def test_one_files_failure_never_changes_another_files_status(tmp_path):
     assert "file signature" in bad_rows[0]["error_message"]
 
 
-def test_missing_incoming_file_produces_no_manifest_row(tmp_path):
+def test_missing_staged_file_produces_no_manifest_row(tmp_path):
     landing_root = _source_root(tmp_path)
     store = _store(landing_root)
-    missing = landing_root / "_incoming" / "insideairbnb" / "toronto" / "missing.csv.gz"
+    missing = landing_root / "_staging" / "insideairbnb" / "toronto" / "missing.csv.gz"
 
     with pytest.raises(ValueError, match="source file not found"):
         _acquire(missing, landing_root, store)
