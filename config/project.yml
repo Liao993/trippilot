@@ -12,12 +12,24 @@ databricks:
     source_files: /Volumes/trippilot_dev/bronze/source_files
 
 sources:
+  # Dataset-level source registry. Each dataset's exact landed object is
+  # resolved from the source manifest (ops.source_file_manifest) by
+  # identity, never from a path here: snapshot dates and file identities
+  # are per-file registration state, not project configuration. The
+  # required_identifier values mirror the Bronze contracts' key fields.
   airbnb:
     provider: insideairbnb
     file_format: csv_gzip
-    snapshot_date: "2026-09-16"  
     cities:
       toronto:
         enabled: true
-        raw_path: /Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/listings.csv.gz
-        required_identifier: id
+        datasets:
+          listings:
+            file: listings.csv.gz
+            required_identifier: id
+          calendar:
+            file: calendar.csv.gz
+            required_identifier: listing_id
+          reviews:
+            file: reviews.csv.gz
+            required_identifier: id

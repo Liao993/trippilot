@@ -86,7 +86,6 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("quality_results", "test") == (
         "trippilot_dev.ops.quality_results_test"
     )
-    assert resolve_table("exclusion", "test") == ("trippilot_dev.ops.exclusion_test")
     assert resolve_table("source_manifest", "test") == (
         "trippilot_dev.ops.source_file_manifest_test"
     )
@@ -126,6 +125,23 @@ def test_tables_resolve_individually_per_mode():
 def test_unknown_logical_table_raises():
     with pytest.raises(ValueError):
         resolve_table("gold", "test")
+
+
+def test_removed_placeholder_key_does_not_resolve():
+    # The "exclusion" key was removed in the pre-F07 cleanup: the
+    # placeholder ops.exclusion table was never created, so the key
+    # must not silently resolve to a nonexistent destination.
+    with pytest.raises(ValueError):
+        resolve_table("exclusion", "test")
+
+
+def test_live_table_keys_use_configured_schemas():
+    # Every live table key must be a catalog.schema.table name whose
+    # schema is one of the project's configured schemas.
+    for table in LIVE_TABLES.values():
+        catalog, schema, _table = table.split(".")
+        assert catalog == "trippilot_dev"
+        assert schema in {"bronze", "silver", "ops"}
 
 
 def test_force_reload_accepts_bools_and_widget_strings():

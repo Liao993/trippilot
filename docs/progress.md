@@ -6,8 +6,8 @@
 
 - **Project:** TripPilot — AI-enabled travel discovery and planning platform
 - **Current phase:** Airbnb data platform — Bronze ingestion foundation completed
-- **Completed through:** F06.3
-- **Next task:** Cleanup and migration of existing Databricks storage and test/live data setup
+- **Completed through:** F06.3 and the pre-F07 cleanup (T01–T14, branch `chore/pre-f07-cleanup`)
+- **Next task:** Live source-manifest registration (licence gate), then F07
 - **Roadmap:** Project Plan v31
 - **Build workflow:** Unified Build Guide v31
 
@@ -22,6 +22,7 @@
 | F06.1 — Calendar and reviews contracts | Complete | Source inspection, schema contracts and source registration in test mode |
 | F06.2 — Calendar and reviews Bronze ingestion | Complete | Separate ingestion paths, raw-data preservation, quality annotations and reconciliation |
 | F06.3 — Quality and rerun controls | Complete | Dataset-scoped run controls, retry handling, failure isolation and reconciliation |
+| Pre-F07 cleanup — storage, code and data reconciliation | Complete | Shared Bronze flow (calendar/reviews notebooks thinned to 4 cells), standardized idempotent control-table setup, post-landing staging cleanup, duplicate retirement, live manifest created, 286 tests green |
 
 ## 3. Verified Airbnb Data State
 
@@ -51,31 +52,24 @@
 - Initial city: Toronto
 - Source snapshot: `2026-09-16`
 
-Existing test and live destinations were created under the previous environment/data setup. Storage organization, temporary staging files, and the test/live setup still require cleanup and reconciliation.
+Test and live destinations now come from the standardized, idempotent setup (`notebooks/ops/setup_control_tables.py`): canonical control shapes (10/11 columns), the 17-field manifest contract in both modes, and resolver-driven isolation. The live listings control table was evolved in place to the 10-column shape. Root duplicate uploads and the `_incoming` staging leftover were hash-verified against the immutable landed objects and removed.
 
 ## 5. Outstanding Items
 
-- Inside Airbnb source licence and attribution confirmation remains a governance requirement before live source manifest registration.
-- Review and clean up existing Databricks Volume storage.
-- Review and clean up the `__incoming` staging directory and residual files.
-- Reconcile existing test and live datasets, control tables and environment configuration with the updated ingestion design.
-- Confirm the intended canonical datasets and test destinations after cleanup.
+- Inside Airbnb source licence and attribution confirmation remains the governance gate before the three real source identities (listings, calendar, reviews; snapshot 2026-09-16) are registered into the live manifest.
+- Decide the retirement of exploration stubs (`notebooks/exploration/`); they still reference the retired root upload paths.
 
 ## 6. Next Task
 
-**Databricks environment and data cleanup — before proceeding to F07.**
+**Live source-manifest registration — licence gate — then F07.**
 
 Scope:
 
-1. Inspect existing Volume contents and storage layout.
-2. Identify temporary, duplicate, obsolete and retained source files.
-3. Review the `__incoming` directory and staging lifecycle.
-4. Inspect existing Bronze tables, test tables, live tables and ingestion control tables.
-5. Reconcile the old test/live setup with the current environment configuration.
-6. Propose a cleanup and migration plan before making destructive changes.
-7. Execute the approved cleanup and migration.
-8. Verify the resulting storage, data, table identities, test/live isolation and ingestion readiness.
+1. Confirm the exact licence and attribution text against the current official Inside Airbnb data policy.
+2. Register the three real source identities into `trippilot_dev.ops.source_file_manifest` through the acquisition notebook, reconciling against the test manifest.
+3. Decide the retirement of exploration stubs.
+4. Start F07.
 
-Do not start F07 until the cleanup and environment reconciliation are completed and verified.
+The pre-F07 cleanup is complete and verified: 286 unit tests pass, the calendar and reviews isolation drills skip cleanly with zero writes, and the immutable landed 2026-09-16 objects are the single source of truth.
 
 Detailed implementation history, file hashes, schemas, run IDs, test drills and technical decisions are retained in feature documentation, GitHub PRs and Notion rather than duplicated here.
