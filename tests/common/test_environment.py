@@ -74,8 +74,8 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("bronze", "test") == (
         "trippilot_dev.bronze.airbnb_listings_bronze_test"
     )
-    assert resolve_table("bronze_control", "test") == (
-        "trippilot_dev.bronze.airbnb_ingestion_control_test"
+    assert resolve_table("listings_control", "test") == (
+        "trippilot_dev.bronze.airbnb_listings_ingestion_control_test"
     )
     assert resolve_table("silver", "test") == (
         "trippilot_dev.silver.airbnb_listings_silver_test"

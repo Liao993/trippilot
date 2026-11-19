@@ -6,7 +6,7 @@
 
 - **Project:** TripPilot — AI-enabled travel discovery and planning platform
 - **Current phase:** Airbnb data platform — Bronze ingestion foundation completed
-- **Completed through:** F06.3 and the pre-F07 cleanup (T01–T14, branch `chore/pre-f07-cleanup`)
+- **Completed through:** F06.3, the pre-F07 cleanup (T01–T14), the post-cleanup verification audit and the listings control-table rename (R1, branch `chore/listings-control-rename`)
 - **Next task:** Live source-manifest registration (licence gate), then F07
 - **Roadmap:** Project Plan v31
 - **Build workflow:** Unified Build Guide v31
@@ -54,9 +54,12 @@
 
 Test and live destinations now come from the standardized, idempotent setup (`notebooks/ops/setup_control_tables.py`): canonical control shapes (10/11 columns), the 17-field manifest contract in both modes, and resolver-driven isolation. The live listings control table was evolved in place to the 10-column shape. Root duplicate uploads and the `_incoming` staging leftover were hash-verified against the immutable landed objects and removed.
 
+**Post-cleanup verification audit and listings control rename (2026-11-19, R1):** a fresh evidence-based audit confirmed the cleanup end state — the 3 immutable landed 2026-09-16 source objects match the manifest records exactly (hash, size, landing path), `_incoming` staging is empty by design (post-landing cleanup works), and there are no orphaned files or tables. The listings ingestion control was renamed to the dataset-specific convention: `airbnb_listings_ingestion_control`(`_test`), resolver key `listings_control`. All 1 live and 11 test control records were copied to the new tables and verified identical (symmetric EXCEPT, zero differences); resolver, table setup, listings notebook and tests were updated and gated (286 tests, ruff format, config + notebook validation). The old `airbnb_ingestion_control`(`_test`) tables remain in place, unreferenced by any code, pending explicit deletion approval as a pre-rename history archive. Live `airbnb_calendar_bronze` / `airbnb_reviews_bronze` do not exist yet by design — data tables are created by their first live ingestion run, which is gated on live manifest registration.
+
 ## 5. Outstanding Items
 
 - Inside Airbnb source licence and attribution confirmation remains the governance gate before the three real source identities (listings, calendar, reviews; snapshot 2026-09-16) are registered into the live manifest.
+- Retire (drop) the redundant `airbnb_ingestion_control`(`_test`) tables once deletion is approved; history is already migrated and verified in `airbnb_listings_ingestion_control`(`_test`).
 - Decide the retirement of exploration stubs (`notebooks/exploration/`); they still reference the retired root upload paths.
 
 ## 6. Next Task

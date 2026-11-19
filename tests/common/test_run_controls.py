@@ -395,13 +395,15 @@ def test_record_control_failure_updates_the_run_row():
 
     record_control_failure(
         spark,
-        "trippilot_dev.bronze.airbnb_ingestion_control_test",
+        "trippilot_dev.bronze.airbnb_listings_ingestion_control_test",
         "a" * 32,
         ValueError("gzip stream is not readable"),
     )
 
     sql = spark.statements[0]
-    assert sql.startswith("UPDATE trippilot_dev.bronze.airbnb_ingestion_control_test")
+    assert sql.startswith(
+        "UPDATE trippilot_dev.bronze.airbnb_listings_ingestion_control_test"
+    )
     assert "status = 'failed'" in sql
     assert "WHERE run_id = '" + "a" * 32 + "'" in sql
     assert "gzip stream is not readable" in sql
