@@ -1,7 +1,7 @@
 """Raw source acquisition: safe validation and immutable landing (F04.2).
 
-Takes a source file staged in an approved incoming location (a manual
-Databricks UI upload to the source Volume's _incoming folder, or an
+Takes a source file staged in an approved staging location (a manual
+Databricks UI upload to the source Volume's _staging folder, or an
 explicitly approved local staging path), validates it, hashes it, and
 lands it once as an immutable, hash-versioned object beneath the
 managed source Volume.
@@ -36,7 +36,7 @@ from src.common.source_manifest import (
 FILE_SIGNATURES: dict[str, bytes] = {"csv.gz": b"\x1f\x8b"}  # gzip magic
 ACQUISITION_FILE_TYPES = tuple(FILE_SIGNATURES)
 
-INCOMING_DIR_NAME = "_incoming"
+STAGING_DIR_NAME = "_staging"
 LANDING_FILENAME_HASH_PREFIX_LENGTH = 12
 SAFE_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -222,26 +222,26 @@ def reprocess_source_file(
 def cleanup_staged_source_file(
     staged_path: str | Path,
     landed_record: dict[str, Any],
-    approved_incoming_roots: Sequence[str | Path],
+    approved_staging_roots: Sequence[str | Path],
 ) -> Path:
-    """Remove a staged incoming copy once its landed object is verified.
+    """Remove a staged copy once its landed object is verified.
 
     Post-landing staging hygiene (pre-F07 T09): acquire_source_file
     calls this with cleanup_staged=True after the record reached the
     landed state. The immutable landed object is hash-verified FIRST
     (verify_landed_record), and the staged copy is only removed when it
-    sits under an approved incoming root - from then on the landed
+    sits under an approved staging root - from then on the landed
     object is the single source of truth.
 
     Raises a sanitized ValueError when the staged path is outside the
-    approved incoming roots or the landed object does not verify. A
+    approved staging roots or the landed object does not verify. A
     raise never changes the manifest: the record already says
     'landed'.
     """
     try:
         staged = Path(staged_path)
-        roots = tuple(Path(item) for item in approved_incoming_roots)
-        _ensure_within(staged, roots, "incoming")
+        roots = tuple(Path(item) for item in approved_staging_roots)
+        _ensure_within(staged, roots, "staging")
         verify_landed_record(landed_record)
         staged.unlink(missing_ok=True)
         return staged
@@ -253,7 +253,7 @@ def acquire_source_file(
     source_metadata: dict[str, Any],
     source_path: str | Path,
     landing_root: str | Path,
-    approved_incoming_roots: Sequence[str | Path] | None = None,
+    approved_staging_roots: Sequence[str | Path] | None = None,
     max_byte_size: int = DEFAULT_MAX_BYTE_SIZE,
     run_id: str | None = None,
     landing_path_prefixes: Sequence[str] = ("/Volumes/",),
@@ -262,8 +262,8 @@ def acquire_source_file(
 ) -> dict[str, Any]:
     """Validate a staged source file and land it immutably; return the record.
 
-    The source file must live under an approved incoming location (by
-    default <landing_root>/_incoming, the manual UI upload folder).
+    The source file must live under an approved staging location (by
+    default <landing_root>/_staging, the manual UI upload folder).
     Raises ValueError with a sanitized, actionable message on any
     problem, and never overwrites a landed file.
 
@@ -302,11 +302,11 @@ def acquire_source_file(
             listed = ", ".join(ACQUISITION_FILE_TYPES)
             raise ValueError(f"Acquisition currently supports only: {listed}")
 
-        if approved_incoming_roots is None:
-            approved_roots: tuple[Path, ...] = (root / INCOMING_DIR_NAME,)
+        if approved_staging_roots is None:
+            approved_roots: tuple[Path, ...] = (root / STAGING_DIR_NAME,)
         else:
-            approved_roots = tuple(Path(item) for item in approved_incoming_roots)
-        _ensure_within(source, approved_roots, "incoming")
+            approved_roots = tuple(Path(item) for item in approved_staging_roots)
+        _ensure_within(source, approved_roots, "staging")
 
         record = build_manifest_record(
             source_metadata, source, run_id=run_id, max_byte_size=max_byte_size

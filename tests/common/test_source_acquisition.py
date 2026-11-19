@@ -43,16 +43,16 @@ def _write_gzip(path, text=CSV_GZ_TEXT):
 
 
 def _source_root(tmp_path):
-    # Mirror the production Volume layout: _incoming and the landed
+    # Mirror the production Volume layout: _staging and the landed
     # family folders are siblings beneath one source root.
     root = tmp_path / "source_files"
     root.mkdir(exist_ok=True)
     return root
 
 
-def _incoming(tmp_path, name="listings.csv.gz", text=CSV_GZ_TEXT):
+def _staged(tmp_path, name="listings.csv.gz", text=CSV_GZ_TEXT):
     return _write_gzip(
-        _source_root(tmp_path) / "_incoming" / "insideairbnb" / "toronto" / name, text
+        _source_root(tmp_path) / "_staging" / "insideairbnb" / "toronto" / name, text
     )
 
 
@@ -82,7 +82,7 @@ def _acquire(source_file, landing_root, metadata=None, **kwargs):
 
 
 def test_valid_file_lands_under_a_hash_versioned_path(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root)
@@ -101,7 +101,7 @@ def test_valid_file_lands_under_a_hash_versioned_path(tmp_path):
 
 
 def test_landed_bytes_match_the_source_exactly(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root)
@@ -116,7 +116,7 @@ def test_landed_bytes_match_the_source_exactly(tmp_path):
 
 
 def test_landed_record_carries_the_required_facts(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root)
@@ -130,8 +130,8 @@ def test_landed_record_carries_the_required_facts(tmp_path):
     assert record["source_file_id"]
 
 
-def test_original_incoming_file_is_left_untouched(tmp_path):
-    source = _incoming(tmp_path)
+def test_original_staged_file_is_left_untouched(tmp_path):
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     before = source.read_bytes()
 
@@ -142,7 +142,7 @@ def test_original_incoming_file_is_left_untouched(tmp_path):
 
 
 def test_same_content_retry_is_idempotent(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     first = _acquire(source, landing_root)
 
@@ -156,11 +156,11 @@ def test_same_content_retry_is_idempotent(tmp_path):
 
 
 def test_changed_content_lands_as_a_distinct_file(tmp_path):
-    source = _incoming(tmp_path, text=CSV_GZ_TEXT)
+    source = _staged(tmp_path, text=CSV_GZ_TEXT)
     landing_root = _source_root(tmp_path)
     first = _acquire(source, landing_root)
 
-    # A corrected file replaces the staged incoming copy with new bytes.
+    # A corrected file replaces the staged copy with new bytes.
     _write_gzip(source, text="id,name\n1,gamma\n")
     second = _acquire(source, landing_root)
 
@@ -171,7 +171,7 @@ def test_changed_content_lands_as_a_distinct_file(tmp_path):
 
 
 def test_landed_file_is_never_overwritten(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     first = _acquire(source, landing_root)
 
@@ -184,7 +184,7 @@ def test_landed_file_is_never_overwritten(tmp_path):
 
 
 def test_interrupted_copy_leaves_no_final_or_temp_file(tmp_path, monkeypatch):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     def broken_copy(src, dst):
@@ -204,7 +204,7 @@ def test_interrupted_copy_leaves_no_final_or_temp_file(tmp_path, monkeypatch):
 
 
 def test_stale_temp_file_from_a_crashed_run_does_not_block_landing(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     version_dir = landing_root / "insideairbnb" / "toronto" / "2026-09-16"
     version_dir.mkdir(parents=True)
@@ -219,14 +219,14 @@ def test_stale_temp_file_from_a_crashed_run_does_not_block_landing(tmp_path):
 
 def test_missing_source_file_is_rejected(tmp_path):
     landing_root = _source_root(tmp_path)
-    missing = landing_root / "_incoming" / "insideairbnb" / "toronto" / "missing.csv.gz"
+    missing = landing_root / "_staging" / "insideairbnb" / "toronto" / "missing.csv.gz"
 
     with pytest.raises(ValueError, match="source file not found"):
         _acquire(missing, landing_root)
 
 
 def test_empty_source_file_is_rejected(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     source.write_bytes(b"")
     landing_root = _source_root(tmp_path)
 
@@ -235,7 +235,7 @@ def test_empty_source_file_is_rejected(tmp_path):
 
 
 def test_oversized_source_file_is_rejected(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     with pytest.raises(ValueError, match="bytes exceeds the"):
@@ -243,7 +243,7 @@ def test_oversized_source_file_is_rejected(tmp_path):
 
 
 def test_file_type_without_acquisition_support_is_rejected(tmp_path):
-    source = _incoming(tmp_path, name="listings.csv")
+    source = _staged(tmp_path, name="listings.csv")
     source.write_bytes(b"id,name\n1,alpha\n")
     landing_root = _source_root(tmp_path)
     metadata = _metadata(source)
@@ -254,7 +254,7 @@ def test_file_type_without_acquisition_support_is_rejected(tmp_path):
 
 
 def test_signature_mismatch_is_rejected(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     source.write_bytes(b"not gzip at all")  # plain text inside a .csv.gz name
     landing_root = _source_root(tmp_path)
 
@@ -266,7 +266,7 @@ def test_source_outside_approved_roots_is_rejected(tmp_path):
     source = _write_gzip(tmp_path / "elsewhere" / "listings.csv.gz")
     landing_root = _source_root(tmp_path)
 
-    with pytest.raises(ValueError, match="not within an approved incoming location"):
+    with pytest.raises(ValueError, match="not within an approved staging location"):
         _acquire(source, landing_root)
 
 
@@ -275,14 +275,14 @@ def test_explicitly_approved_local_path_is_accepted(tmp_path):
     landing_root = _source_root(tmp_path)
 
     record = _acquire(
-        source, landing_root, approved_incoming_roots=[tmp_path / "approved-local"]
+        source, landing_root, approved_staging_roots=[tmp_path / "approved-local"]
     )
 
     assert Path(record["landing_path"]).is_file()
 
 
 def test_unsafe_source_family_is_rejected(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
     metadata = _metadata(source)
     metadata["source_family"] = "../evil"
@@ -292,7 +292,7 @@ def test_unsafe_source_family_is_rejected(tmp_path):
 
 
 def test_filename_must_match_the_declared_file_type(tmp_path):
-    source = _incoming(tmp_path, name="listings.zip")
+    source = _staged(tmp_path, name="listings.zip")
     landing_root = _source_root(tmp_path)
 
     with pytest.raises(ValueError, match="must end with the declared file type"):
@@ -319,8 +319,8 @@ def test_failure_messages_redact_credential_patterns(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_cleanup_staged_removes_incoming_copy_after_landing(tmp_path):
-    source = _incoming(tmp_path)
+def test_cleanup_staged_removes_staged_copy_after_landing(tmp_path):
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root, cleanup_staged=True)
@@ -331,7 +331,7 @@ def test_cleanup_staged_removes_incoming_copy_after_landing(tmp_path):
 
 
 def test_cleanup_staged_is_opt_in_by_default(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root)
@@ -340,8 +340,8 @@ def test_cleanup_staged_is_opt_in_by_default(tmp_path):
     assert source.is_file()
 
 
-def test_cleanup_staged_removes_incoming_on_idempotent_retry(tmp_path):
-    source = _incoming(tmp_path)
+def test_cleanup_staged_removes_staged_copy_on_idempotent_retry(tmp_path):
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     first = _acquire(source, landing_root)
@@ -353,7 +353,7 @@ def test_cleanup_staged_removes_incoming_on_idempotent_retry(tmp_path):
 
 
 def test_cleanup_keeps_staged_copy_when_landed_object_is_corrupted(tmp_path):
-    source = _incoming(tmp_path)
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root)
@@ -361,23 +361,23 @@ def test_cleanup_keeps_staged_copy_when_landed_object_is_corrupted(tmp_path):
 
     with pytest.raises(ValueError) as excinfo:
         acquisition.cleanup_staged_source_file(
-            source, record, (landing_root / "_incoming",)
+            source, record, (landing_root / "_staging",)
         )
 
     assert "does not match" in str(excinfo.value)
     assert source.is_file()
 
 
-def test_cleanup_rejects_paths_outside_approved_incoming_roots(tmp_path):
-    source = _incoming(tmp_path)
+def test_cleanup_rejects_paths_outside_approved_staging_roots(tmp_path):
+    source = _staged(tmp_path)
     landing_root = _source_root(tmp_path)
 
     record = _acquire(source, landing_root)
 
     with pytest.raises(ValueError) as excinfo:
         acquisition.cleanup_staged_source_file(
-            source, record, (tmp_path / "other_incoming",)
+            source, record, (tmp_path / "other_staging",)
         )
 
-    assert "incoming" in str(excinfo.value)
+    assert "staging" in str(excinfo.value)
     assert source.is_file()
