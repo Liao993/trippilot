@@ -26,7 +26,10 @@ LIVE_TABLES = {
     "silver": "trippilot_dev.silver.airbnb_listings_silver",
     "silver_rejected": "trippilot_dev.silver.airbnb_listings_rejected",
     "quality_results": "trippilot_dev.ops.quality_results",
-    "exclusion": "trippilot_dev.ops.exclusion",
+    # The former "exclusion" key was removed in the pre-F07 cleanup: it
+    # pointed at a placeholder table (ops.exclusion) that was never
+    # created. A feature that needs it should create the table
+    # populated and re-add the key here.
     "source_manifest": "trippilot_dev.ops.source_file_manifest",
     # F06.2: separate Bronze data products for the calendar and review
     # datasets - never conflated with the listings table. Test mode

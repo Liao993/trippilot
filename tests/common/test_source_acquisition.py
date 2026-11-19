@@ -312,3 +312,72 @@ def test_failure_messages_redact_credential_patterns(tmp_path):
 
     assert fake_credential not in str(excinfo.value)
     assert "***REDACTED***" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Post-landing staging cleanup (pre-F07 T09)
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_staged_removes_incoming_copy_after_landing(tmp_path):
+    source = _incoming(tmp_path)
+    landing_root = _source_root(tmp_path)
+
+    record = _acquire(source, landing_root, cleanup_staged=True)
+
+    assert record["processing_state"] == "landed"
+    assert not source.exists()
+    assert Path(record["landing_path"]).is_file()
+
+
+def test_cleanup_staged_is_opt_in_by_default(tmp_path):
+    source = _incoming(tmp_path)
+    landing_root = _source_root(tmp_path)
+
+    record = _acquire(source, landing_root)
+
+    assert record["processing_state"] == "landed"
+    assert source.is_file()
+
+
+def test_cleanup_staged_removes_incoming_on_idempotent_retry(tmp_path):
+    source = _incoming(tmp_path)
+    landing_root = _source_root(tmp_path)
+
+    first = _acquire(source, landing_root)
+    second = _acquire(source, landing_root, cleanup_staged=True)
+
+    assert second["source_file_id"] == first["source_file_id"]
+    assert second["processing_state"] == "landed"
+    assert not source.exists()
+
+
+def test_cleanup_keeps_staged_copy_when_landed_object_is_corrupted(tmp_path):
+    source = _incoming(tmp_path)
+    landing_root = _source_root(tmp_path)
+
+    record = _acquire(source, landing_root)
+    Path(record["landing_path"]).write_bytes(b"corrupted")
+
+    with pytest.raises(ValueError) as excinfo:
+        acquisition.cleanup_staged_source_file(
+            source, record, (landing_root / "_incoming",)
+        )
+
+    assert "does not match" in str(excinfo.value)
+    assert source.is_file()
+
+
+def test_cleanup_rejects_paths_outside_approved_incoming_roots(tmp_path):
+    source = _incoming(tmp_path)
+    landing_root = _source_root(tmp_path)
+
+    record = _acquire(source, landing_root)
+
+    with pytest.raises(ValueError) as excinfo:
+        acquisition.cleanup_staged_source_file(
+            source, record, (tmp_path / "other_incoming",)
+        )
+
+    assert "incoming" in str(excinfo.value)
+    assert source.is_file()

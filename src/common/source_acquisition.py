@@ -219,6 +219,36 @@ def reprocess_source_file(
         raise ValueError(sanitize_error_message(str(exc))) from None
 
 
+def cleanup_staged_source_file(
+    staged_path: str | Path,
+    landed_record: dict[str, Any],
+    approved_incoming_roots: Sequence[str | Path],
+) -> Path:
+    """Remove a staged incoming copy once its landed object is verified.
+
+    Post-landing staging hygiene (pre-F07 T09): acquire_source_file
+    calls this with cleanup_staged=True after the record reached the
+    landed state. The immutable landed object is hash-verified FIRST
+    (verify_landed_record), and the staged copy is only removed when it
+    sits under an approved incoming root - from then on the landed
+    object is the single source of truth.
+
+    Raises a sanitized ValueError when the staged path is outside the
+    approved incoming roots or the landed object does not verify. A
+    raise never changes the manifest: the record already says
+    'landed'.
+    """
+    try:
+        staged = Path(staged_path)
+        roots = tuple(Path(item) for item in approved_incoming_roots)
+        _ensure_within(staged, roots, "incoming")
+        verify_landed_record(landed_record)
+        staged.unlink(missing_ok=True)
+        return staged
+    except ValueError as exc:
+        raise ValueError(sanitize_error_message(str(exc))) from None
+
+
 def acquire_source_file(
     source_metadata: dict[str, Any],
     source_path: str | Path,
@@ -228,6 +258,7 @@ def acquire_source_file(
     run_id: str | None = None,
     landing_path_prefixes: Sequence[str] = ("/Volumes/",),
     manifest_store: Any = None,
+    cleanup_staged: bool = False,
 ) -> dict[str, Any]:
     """Validate a staged source file and land it immutably; return the record.
 
@@ -248,6 +279,11 @@ def acquire_source_file(
       validation and landing; only then do the operational fields move
       to the new attempt's run_id and state. Failed runs are never
       silently converted to successful ones.
+
+    With cleanup_staged=True the staged incoming copy is deleted once
+    the landed object has been hash-verified (pre-F07 T09): the
+    immutable landed object becomes the single source of truth. The
+    default (False) keeps the staged copy untouched.
 
     Failures before the file facts are known (missing, empty or
     oversized incoming files) cannot produce a manifest row because
@@ -282,6 +318,7 @@ def acquire_source_file(
                 return verify_landed_record(existing)
             manifest_store.upsert(record)
 
+        landed: dict[str, Any] | None = None
         try:
             verify_file_signature(source, file_type)
             final_path = build_landing_path(root, source, record)
@@ -291,38 +328,38 @@ def acquire_source_file(
                         f"{final_path}: landing target exists and is not a regular file"
                     )
                 existing_hash = compute_file_hash_sha256(final_path)
-                if existing_hash == record["file_hash_sha256"]:
-                    landed = _land(record, final_path, landing_path_prefixes)
-                    if manifest_store is not None:
-                        manifest_store.upsert(landed)
-                    return landed
-                raise ValueError(
-                    f"{final_path}: already exists with different content (sha256 "
-                    f"{existing_hash[:12]}...); landed raw files are immutable and are "
-                    "never overwritten - a corrected file lands under its own hash"
-                )
+                if existing_hash != record["file_hash_sha256"]:
+                    raise ValueError(
+                        f"{final_path}: already exists with different content (sha256 "
+                        f"{existing_hash[:12]}...); landed raw files are immutable and are "
+                        "never overwritten - a corrected file lands under its own hash"
+                    )
+                landed = _land(record, final_path, landing_path_prefixes)
 
-            final_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = final_path.parent / f".{final_path.name}.tmp-{uuid.uuid4().hex}"
-            try:
-                shutil.copyfile(source, temp_path)
-                if compute_file_hash_sha256(temp_path) != record["file_hash_sha256"]:
-                    raise ValueError(
-                        f"{temp_path}: copied bytes do not match the source hash; "
-                        "landing aborted"
-                    )
-                if final_path.exists():
-                    raise ValueError(
-                        f"{final_path}: appeared during landing; aborting without overwrite"
-                    )
-                os.replace(temp_path, final_path)
-            finally:
-                if temp_path.exists():
-                    temp_path.unlink()
-            landed = _land(record, final_path, landing_path_prefixes)
-            if manifest_store is not None:
-                manifest_store.upsert(landed)
-            return landed
+            if landed is None:
+                final_path.parent.mkdir(parents=True, exist_ok=True)
+                temp_path = (
+                    final_path.parent / f".{final_path.name}.tmp-{uuid.uuid4().hex}"
+                )
+                try:
+                    shutil.copyfile(source, temp_path)
+                    if (
+                        compute_file_hash_sha256(temp_path)
+                        != record["file_hash_sha256"]
+                    ):
+                        raise ValueError(
+                            f"{temp_path}: copied bytes do not match the source hash; "
+                            "landing aborted"
+                        )
+                    if final_path.exists():
+                        raise ValueError(
+                            f"{final_path}: appeared during landing; aborting without overwrite"
+                        )
+                    os.replace(temp_path, final_path)
+                finally:
+                    if temp_path.exists():
+                        temp_path.unlink()
+                landed = _land(record, final_path, landing_path_prefixes)
         except (ValueError, OSError) as exc:
             # Record the visible failure (registered -> failed) with the
             # sanitized reason, then re-raise: the attempt stays
@@ -332,5 +369,11 @@ def acquire_source_file(
                     apply_state_transition(record, "failed", error_message=str(exc))
                 )
             raise
+
+        if manifest_store is not None:
+            manifest_store.upsert(landed)
+        if cleanup_staged:
+            cleanup_staged_source_file(source, landed, approved_roots)
+        return landed
     except ValueError as exc:
         raise ValueError(sanitize_error_message(str(exc))) from None

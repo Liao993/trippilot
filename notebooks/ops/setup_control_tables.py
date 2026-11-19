@@ -1,60 +1,63 @@
-# Create the ingestion-control table if it does not already exist.
+# Standardized operational-table setup for both run modes (pre-F07
+# cleanup T02).
 #
-# This table is the pipeline's audit log. It records every attempted load,
-# including whether it succeeded, how many rows were written, and any error.
+# This script is the single place that creates or repairs the
+# ingestion-control, quality-results and source-manifest tables, with
+# every destination resolved through the shared environment resolver -
+# the same isolation rules the ingestion notebooks use. It is
+# idempotent: rerunning it never drops or overwrites data.
 #
-# We use STRING for dates here because Bronze preserves source context.
-# Silver can later cast dates into proper DATE types if needed.
+# - listings control: 10-column shape (source_file_id +
+#   prior_source_file_id); a legacy 8-column table is evolved in place,
+#   preserving all history.
+# - calendar/reviews controls: 11-column per-dataset shape with the
+#   explicit dataset tag (F06.3).
+# - ops.quality_results: run-quality results sink.
+# - ops.source_file_manifest: created from the tested ManifestStore
+#   contract (17 fields, idempotent MERGE upserts).
+#
+# RUN_MODE selects the destination exactly like the ingestion notebooks:
+# "test" (default) initializes the isolated *_test tables; "live"
+# initializes the canonical development tables and is an intentional
+# promotion step - edit it explicitly before running.
 
-from pyspark.sql import SparkSession
-
-# Use the real catalog and schema recorded in config/project.yml.
-CATALOG = "trippilot_dev"
-BRONZE_SCHEMA = "bronze"
-
-# Full name of the control table.
-CONTROL_TABLE = f"{CATALOG}.{BRONZE_SCHEMA}.airbnb_ingestion_control"
-
-# CREATE TABLE IF NOT EXISTS makes this notebook safe to rerun.
 # Databricks notebook source
-spark.sql('CREATE SCHEMA IF NOT EXISTS trippilot_dev.ops')
-spark.sql('''
-CREATE TABLE IF NOT EXISTS trippilot_dev.bronze.airbnb_ingestion_control (
-  city STRING, snapshot_date STRING, run_id STRING, status STRING,
-  row_count LONG, started_at_utc STRING, completed_at_utc STRING,
-  error_message STRING
-) USING DELTA
-''')
+RUN_MODE = "test"  # "test" | "live"
 
-# F06.3: per-dataset ingestion-control tables for the calendar and
-# review data products. The listings control table above is NOT
-# altered: it keeps its original schema and history. Every row in the
-# new tables carries an explicit dataset tag, the exact source-file
-# identity it processed, and - for a controlled reprocess - the
-# identity it replaced.
-spark.sql('''
-CREATE TABLE IF NOT EXISTS trippilot_dev.bronze.airbnb_calendar_ingestion_control (
-  city STRING, snapshot_date STRING, run_id STRING, status STRING,
-  row_count LONG, started_at_utc STRING, completed_at_utc STRING,
-  error_message STRING, source_file_id STRING, prior_source_file_id STRING,
-  dataset STRING
-) USING DELTA
-''')
-spark.sql('''
-CREATE TABLE IF NOT EXISTS trippilot_dev.bronze.airbnb_reviews_ingestion_control (
-  city STRING, snapshot_date STRING, run_id STRING, status STRING,
-  row_count LONG, started_at_utc STRING, completed_at_utc STRING,
-  error_message STRING, source_file_id STRING, prior_source_file_id STRING,
-  dataset STRING
-) USING DELTA
-''')
-spark.sql('''
-CREATE TABLE IF NOT EXISTS trippilot_dev.ops.quality_results (
-  run_id STRING, source STRING, city STRING, snapshot_date STRING,
-  layer STRING, check_name STRING, passed BOOLEAN,
-  observed_count LONG, checked_at_utc TIMESTAMP
-) USING DELTA
-''')
+from pathlib import Path
+import sys
 
-# Confirm that the control table is available.
-print(f"Ingestion control table ready: {CONTROL_TABLE}")
+start = Path.cwd().resolve()
+ROOT = next(
+    (
+        p
+        for p in [start, *start.parents]
+        if (p / "src").is_dir() and (p / "config/project.yml").is_file()
+    ),
+    None,
+)
+if ROOT is None:
+    raise RuntimeError(
+        "Cannot locate the TripPilot repository root (src/ and config/project.yml)."
+    )
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.common.environment import resolve_tables, validate_run_mode
+from src.common.source_manifest_store import ManifestStore
+from src.common.table_setup import ensure_operational_tables, ensure_schemas
+
+mode = validate_run_mode(RUN_MODE)
+tables = resolve_tables(mode)
+
+print(f"Setting up TripPilot operational tables in {mode!r} mode")
+print(f"Schemas ensured: {', '.join(ensure_schemas(spark, tables.values()))}")
+
+actions = ensure_operational_tables(spark, tables)
+for key, action in sorted(actions.items()):
+    print(f"{key:18} {action:8} {tables[key]}")
+
+manifest_store = ManifestStore(tables["source_manifest"], spark=spark)
+manifest_store.ensure_table()
+print(f"{'source_manifest':18} {'ready':8} {tables['source_manifest']}")
+print("Operational tables ready.")
