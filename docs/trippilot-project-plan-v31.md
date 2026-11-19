@@ -1,9 +1,9 @@
 # TripPilot — Project Plan
 
-**Version:** 29.0  
-**Revised:** November 13, 2026  
+**Version:** 31.0  
+**Revised:** November 19, 2026  
 **Supersedes:** v28 as the active plan; retain earlier versions as historical references  
-**Companion:** `trippilot-build-guide-v29.md`; `HOW_TO_USE-v29.md`  
+**Companion:** `trippilot-unified-build-guide-v31.md`  
 **Overall platform horizon:** 8–12 months  
 **Delivery principle:** follow the complete roadmap in order, reuse verified work, and build one integrated travel data and AI platform.  
 **Status:** Project blueprint. Planned features are not evidence of implementation or runtime verification.
@@ -101,7 +101,15 @@ The three-month aspiration does not remove, defer or reorder these features. It 
 
 Existing code is an asset, not a reason to skip roadmap features. When reaching a subfeature, inspect the repository and its evidence. If the implementation already meets the acceptance criteria, verify it and record the evidence rather than rebuilding it. If it is incomplete, repair it within that subfeature. A feature can be marked complete only when its required subfeatures and feature-level acceptance criteria are verified.
 
-### 3.4 Multi-city acceptance principle
+### 3.4 Shared build, test and promotion policy
+
+Every feature follows the same approved build lifecycle, defined in the Unified Build Guide v31: inspect and plan; implement; run `pytest`; run isolated testing-data validation; automatically execute the approved live/canonical workflow when all validation and governance gates pass; then verify, review and record evidence. The process is tool-independent and may be carried out by the user with guidance or an AI coding agent.
+
+Testing has three purposes and should not be confused: small synthetic fixtures for fast unit tests; real-source testing in an isolated test destination, processing all relevant records when practical; and live/canonical acceptance after gates pass. When a dataset is too large for a routine full test, bounded or representative sampling may be used for development, but its selection and size must be documented and any required full-source/scale acceptance remains outstanding. The relevant data is the feature's intended source scope, not automatically the provider's entire global dataset.
+
+Live execution is automatic after the approved workflow's test gates pass, but it is never unconditional. Source rights/attribution, source identity, schema, quality thresholds, reconciliation, idempotency, permissions, destination safety and feature-specific constraints must pass. A failed gate blocks promotion and is reported.
+
+### 3.5 Multi-city acceptance principle
 
 The 50-city target belongs to F17 and is reached only after F01–F16 have been completed in sequence. A city counts only when its selected detailed-listings snapshot is available and valid, Bronze ingestion succeeds with provenance and run metadata, core Silver succeeds, quality and reconciliation checks pass, and runtime evidence is recorded. Calendar, reviews, summary and neighbourhood files have independent availability and completion states.
 
@@ -424,6 +432,8 @@ Subfeature IDs are stable once implementation begins. If scope changes, update t
 
 **Notion hierarchy:** create one parent page per feature and one child page per subfeature. Tasks remain checklists/sections inside the subfeature page unless a task itself becomes a separately managed deliverable. Do not create a Notion page for every small coding action.
 
+**Feature learning/close-out:** after completing a feature, the user supplies the updated GitHub repository/feature reference and the Notion feature page reference. If either is missing, the AI must stop and request both before generating a consolidated feature page. The consolidated page is based on inspected code and verified evidence, and explains the feature’s purpose, architecture/data flow, important decisions, storage locations, implementation, tests, runtime results, limitations and lessons. The user reads it and creates a separate follow-up Q&A page; answers are written into that Q&A page unless the user explicitly requests chat answers. This is a learning/documentation workflow, not a substitute for implementation evidence in GitHub or `docs/progress.md`.
+
 **Progress rule:** feature status is derived from its subfeatures. A feature is `Verified` only when every required subfeature is verified and the parent feature acceptance criteria pass. Deferred or optional subfeatures must be explicitly marked and justified; they cannot be silently treated as complete.
 
 **Do not create city-specific copies of notebooks or services.** Source registries, reusable ingestion patterns, contracts and per-city manifests should carry the expansion.
@@ -653,7 +663,7 @@ Re-check source schemas, file availability, attribution, API terms and Databrick
 
 
 
-## 15. v29 feature decomposition and change control
+## 15. v30 feature decomposition and change control
 
 v29 retains the feature → subfeature → task hierarchy and the complete 31-feature product scope carried forward from v28. Implementation follows F01 through F31 in order, with subfeatures completed in ascending order inside each feature. The detailed task breakdown and acceptance criteria are in `trippilot-build-guide-v29.md`.
 

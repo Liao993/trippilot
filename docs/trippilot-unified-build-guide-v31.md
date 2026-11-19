@@ -1,16 +1,16 @@
 # TripPilot — Unified Build Guide
 
-**Version:** 30.0  
-**Revised:** November 14, 2026  
-**Consolidates:** Build Guide v29, Notion Implementation Guide v29, Genie Code Execution Plan v29 and the useful navigation/workflow guidance from HOW_TO_USE v29  
-**Architecture companion:** `trippilot-project-plan-v29.md`  
+**Version:** 31.0  
+**Revised:** November 19, 2026  
+**Consolidates:** Build Guide v29, Notion Implementation Guide v29, AI-agent execution notes v29 and the useful navigation/workflow guidance from HOW_TO_USE v29  
+**Architecture companion:** `trippilot-project-plan-v31.md`  
 **Purpose:** One reusable, end-to-end manual for starting, restarting, implementing, testing, verifying and handing off any TripPilot feature or subfeature.
 
 ## Document role and source-of-truth rules
 
-This is the single operational build guide for TripPilot. It combines the feature roadmap and task register with the human implementation workflow, Databricks browser instructions, Notion templates, Git/GitHub workflow and Genie Code execution protocol.
+This is the single operational build guide for TripPilot. It combines the feature roadmap and task register with the human implementation workflow, Databricks browser instructions, Notion templates, Git/GitHub workflow and AI coding-agent protocol.
 
-The existing Project Plan v29 remains the companion source for product vision, architecture decisions, data-source decisions, system boundaries and target repository structure. This guide retains the full F01–F31 roadmap, subfeature IDs, task IDs, dependencies and acceptance criteria from Build Guide v29.
+The existing Project Plan v31 remains the companion source for product vision, architecture decisions, data-source decisions, system boundaries and target repository structure. This guide retains the full F01–F31 roadmap, subfeature IDs, task IDs, dependencies and acceptance criteria from Build Guide v29.
 
 Use this document whether you are:
 - starting the project from an empty or newly cloned repository;
@@ -18,15 +18,15 @@ Use this document whether you are:
 - starting the next subfeature in the roadmap;
 - continuing partially completed work;
 - implementing manually with ChatGPT guidance;
-- using Genie Code inside the Databricks browser UI; or
+- using an AI coding agent in an available repository/workspace context; or
 - debugging, reviewing, testing or closing a subfeature.
 
-**Do not maintain separate implementation instructions in the old Notion Implementation Guide v29, Genie Code Execution Plan v29 or HOW_TO_USE v29.** Their useful procedures and navigation guidance are consolidated into this file. Notion remains an optional place to track feature pages and evidence, but the instructions themselves live here.
+**Do not maintain separate implementation instructions in the old Notion Implementation Guide v29, AI-agent execution notes v29 or HOW_TO_USE v29.** Their useful procedures and navigation guidance are consolidated into this file. Notion remains an optional place to track feature pages and evidence, but the instructions themselves live here.
 
 ### Source-of-truth hierarchy
 
-1. `trippilot-project-plan-v29.md` — product scope, architecture, source decisions and system guardrails.
-2. This Unified Build Guide v30 — roadmap order, exact feature/subfeature/task IDs, acceptance criteria and implementation procedures.
+1. `trippilot-project-plan-v31.md` — product scope, architecture, source decisions and system guardrails.
+2. This Unified Build Guide v31 — roadmap order, exact feature/subfeature/task IDs, acceptance criteria and implementation procedures.
 3. `docs/progress.md` — actual implementation state and verified evidence.
 4. Current repository files, tests, schemas, Git history and Databricks runtime metadata — evidence of current reality.
 5. Notion parent/child pages — working notes, task execution details and evidence links; they must agree with the sources above.
@@ -39,8 +39,8 @@ You do **not** need a separate `HOW_TO_USE.md`. This section is the short naviga
 
 Use only these three project references as your normal starting point:
 
-1. **`trippilot-project-plan-v29.md`** — what TripPilot is, why it is being built, its architecture, source strategy, data layers, product boundaries and target repository structure.
-2. **This Unified Build Guide v30** — what to build next, in what order, with which feature/subfeature/task IDs, how to implement it, and how to verify completion.
+1. **`trippilot-project-plan-v31.md`** — what TripPilot is, why it is being built, its architecture, source strategy, data layers, product boundaries and target repository structure.
+2. **This Unified Build Guide v31** — what to build next, in what order, with which feature/subfeature/task IDs, how to implement it, and how to verify completion.
 3. **`docs/progress.md`** — what has actually been implemented and verified in the repository.
 
 Notion is an optional working and evidence-tracking layer. It can hold feature/subfeature notes, checklists, decisions and links, but it does not replace these three references or independently change the roadmap.
@@ -52,11 +52,12 @@ For every new subfeature:
 1. **Find the next item.** Check the roadmap in this guide and compare it with `docs/progress.md`. Confirm the exact `Fxx.y` and task IDs.
 2. **Inspect before changing anything.** Check the GitHub/Databricks Git folder branch, commit, working tree, existing files, tests and relevant Databricks workspace capabilities.
 3. **Plan one subfeature.** Confirm scope, dependencies, input/output contracts, file plan, UI steps, tests, runtime checks and acceptance criteria.
-4. **Choose how to implement.** Use ChatGPT step-by-step guidance if you want to learn and perform the work yourself, or Genie Code in the Databricks browser if you want workspace-assisted implementation.
-5. **Verify and record.** Run tests, verify in the actual Databricks runtime where required, review the Git diff, synchronize to GitHub, and update `docs/progress.md` and Notion if used.
-6. **Stop at the exit gate.** Do not automatically begin the next subfeature. Record the next eligible roadmap item.
+4. **Implement.** Use an AI coding agent (Codex, Claude Code or another suitable tool), or choose the guided learning mode to implement the approved plan yourself.
+5. **Validate and promote.** Run `pytest`, then testing-data validation in the isolated test destination. When all required gates pass, execute the approved live/canonical-table run automatically as part of the workflow; stop instead if a governance, permission, source, schema, quality or destination-safety gate is unmet.
+6. **Review, record and stop.** Review the diff and actual results, update `docs/progress.md`, complete the Notion feature documentation/review workflow when the required links are provided, and record the next eligible roadmap item. Do not start the next subfeature automatically.
 
 The detailed sequence is in **Operational Manual → Standard implementation workflow for every subfeature**.
+
 
 ### Choose the right working mode
 
@@ -66,7 +67,7 @@ The detailed sequence is in **Operational Manual → Standard implementation wor
 | Resume existing work or switch computers | Operational Manual → Resume existing work / Cross-computer handoff |
 | Learn while implementing, with exact browser clicks and code | Operational Manual → Implementing with ChatGPT |
 | Ask ChatGPT to inspect and plan a subfeature | Operational Manual → Standard prompts for working with ChatGPT |
-| Ask Genie Code to inspect, implement and test in Databricks | Operational Manual → Genie Code workflow in Databricks browser |
+| Ask an AI coding agent to inspect, implement and test | Operational Manual → AI coding-agent workflow |
 | Debug a failure | Operational Manual → Troubleshooting procedure and debugging prompts |
 | Review and close a subfeature | Operational Manual → Review, verification and close-out |
 
@@ -1654,56 +1655,47 @@ Before ending a session on any computer:
 
 When resuming on another computer, open the same remote repository and intended branch, pull the latest changes, inspect the working tree, and confirm the Databricks workspace context before editing. Do not rely on files that exist only on the previous computer.
 
-## Suggested progress record
+## Required `docs/progress.md` record
 
-Keep `docs/progress.md` as the source of truth. Update it after each verified feature.
+The Build Guide defines what the agent must update; you do not need to repeat this in every prompt. Keep this file concise and evidence-based. Update after each subfeature and whenever verified project state changes.
+
+Record only:
+- active milestone, feature/subfeature/task IDs and status;
+- branch, tested commit, PR and CI status;
+- completed work and key changed paths;
+- `pytest` command/result;
+- testing-data validation type (fixture/sample/full relevant source), source identity, sample rationale if applicable, destination, counts and quality/reconciliation;
+- live execution status, canonical table/output, run ID/Delta version and post-live validation when applicable;
+- verified blockers, gaps and one next action.
+
+Avoid tutorials, full logs, speculative claims, repeated architecture, and details already documented in feature pages or PRs.
 
 ```markdown
-# TripPilot Progress — v29
+# TripPilot Progress — v31
 
-## Current milestone
-- Target checkpoint:
-- Active feature ID/title:
-- Active subfeature ID/title:
-- Active task ID(s):
+## Current work
+- Feature/subfeature/task:
 - Status:
+- Next action:
 
-## Repository and CI
+## Git / CI
 - Branch / PR / tested commit:
-- CI workflow URL/status:
-- Python/runtime/dependency versions:
+- CI status/link:
+- Changed files (summary):
 
-## Databricks environment
-- Edition/runtime:
-- Catalog/schema/Volume:
-- Job/pipeline/bundle target:
-- Verified capabilities / restrictions:
+## Validation evidence
+- pytest command/result:
+- Test-data validation: fixture / sample / full relevant source
+- Source/version/hash and sampling rationale (if any):
+- Test destination and counts/quality/reconciliation:
+- Live run status/destination/run ID/Delta version:
+- Post-live validation:
 
-## Source coverage
-| Source | City/agency/document | Source version/date | File/feed status | Licence review | Evidence |
-|---|---|---|---|---|---|
+## Verified milestone summary
+- Feature/subfeature | status | tested commit | evidence | known gap
 
-## Data quality and monitoring
-- Input/accepted/excluded/duplicate counts:
-- Freshness/coverage:
-- Schema and relationship checks:
-- Job failures/retries/duration:
-- Monitors/dashboards/alerts:
-
-## Application and AI
-- Services/UI capabilities:
-- Model/provider/version:
-- Prompt/tool schema version:
-- RAG corpus/chunker/embedding/index version:
-- MCP server/client version:
-- Evaluation set/run and result:
-- Tracing/latency/error observations:
-
-## Verified features
-| Feature | Tested revision | Runtime | Evidence | Known gaps |
-|---|---|---|---|---|
-
-## Current blockers / next action
+## Blockers and next action
+-
 ```
 
 ---
@@ -1718,7 +1710,7 @@ This section explains how to execute the roadmap above. It applies to every feat
 
 Use this sequence when creating a new working copy, setting up a new computer or restarting TripPilot after a long pause.
 
-1. **Read the architecture baseline.** Open `trippilot-project-plan-v29.md` and review the product scope, architecture, source decisions, target repository structure and guardrails.
+1. **Read the architecture baseline.** Open `trippilot-project-plan-v31.md` and review the product scope, architecture, source decisions, target repository structure and guardrails.
 2. **Read this guide's roadmap.** Confirm the F01–F31 sequence and start with F01 unless the progress record proves that earlier work is already complete.
 3. **Obtain the repository.** Clone the existing GitHub repository. If no repository exists yet, create one only after confirming the intended repository name, visibility and initial branch.
 4. **Inspect before creating files.** Check whether source files, notebooks, tests, configuration and documentation already exist. Do not rebuild something that is already implemented.
@@ -1781,7 +1773,7 @@ Databricks browser UI remains a primary development environment so work can cont
 |---|---|---|
 | PySpark, Spark SQL, Delta and notebooks | Databricks browser workspace | Execute against the actual Databricks environment |
 | Unity Catalog, schemas, tables and Volumes | Databricks browser UI | Inspect real metadata and permissions |
-| Genie Code-assisted development | Genie Code panel in Databricks browser | Agent-assisted work in the workspace/Git-folder context |
+| AI-agent-assisted development | Supported AI coding agent in its available repository context | Agent-assisted work, subject to verified permissions |
 | Durable source code and history | GitHub | Continue from any computer |
 | Browser-based repository editing | Databricks Git folder connected to GitHub | Keep workspace edits version-controlled |
 | Requirements, task checklists and evidence | Notion | Human-readable tracking and handoff |
@@ -1838,6 +1830,16 @@ Example only: `notebooks/bronze/airbnb/F05_2_bronze_listings.py`. Reuse the repo
 4. Record the actual catalog, schema and Volume names for the subfeature.
 5. Do not assume a catalog named `main` or schema named `default` exists or is writable.
 6. Use an isolated development/test destination before writing tables.
+
+### Data storage and destination policy
+
+- **Temporary acquisition/staging:** use the staging location defined for the current source and implementation. Treat it as temporary; do not move/rename it without checking code, tests, notebooks, manifests and existing files. Feature-specific staging paths and cleanup details belong in that feature’s implementation prompt/plan.
+- **Immutable raw landing:** preserve source bytes by source identity/version and content hash. Never overwrite an immutable landed file silently.
+- **Bronze/Silver/Gold:** use the project's configured catalog, schemas and tables; keep source-faithful Bronze, normalized Silver and query-oriented Gold responsibilities separate. Do not invent or hard-code a new storage root for a feature.
+- **Test destinations:** resolve through the existing environment/run-mode configuration and use isolated `_test` destinations. Test mode must not write canonical tables. Confirm the resolved destination before any write.
+- **Live destinations:** canonical development tables are not the same as production. Resolve targets from existing configuration and verify them before promotion.
+- **Documentation:** feature prompts provide feature-specific source filenames, source versions, expected tables/paths and any exceptional storage requirements. Shared path/destination policy is maintained here, not repeated in every prompt.
+- **Cleanup:** remove staged/landed files or tables only when their identity and ownership are confirmed and the cleanup is included in an approved plan. Never infer an orphan from its folder name alone.
 
 **Verify with SQL**
 1. Open **SQL Editor** from the left navigation.
@@ -2085,7 +2087,7 @@ Useful evidence:
 
 ## 5. Standard implementation workflow for every subfeature
 
-Follow these stages in order. The same process applies whether you write the code yourself, ask ChatGPT to generate it or use Genie Code.
+Follow these stages in order. The same process applies whether you write the code yourself, ask ChatGPT to generate it or use an AI coding agent.
 
 ### Stage 1 — Resume and inspect
 
@@ -2137,7 +2139,7 @@ Provide a task-by-task plan with:
 - Expected outputs and evidence.
 - Risks and rollback/recovery approach.
 
-Wait for approval before implementation when the plan introduces a material architecture/scope change, destructive write, live-data overwrite, paid service, public release or external side effect.
+Approval of the implementation plan must include the intended live/canonical destination and any replacement/overwrite behavior. After the agreed gates pass, routine live acceptance executes automatically. Stop for renewed approval only if the agent discovers an operation outside the approved plan, a destructive change with no reviewed recovery plan, a new paid service, public release, or another material external side effect.
 
 ### Stage 5 — Implement one task increment at a time
 
@@ -2167,14 +2169,16 @@ For each test, record the exact command or UI action, actual result, failure out
 
 ### Stage 7 — Runtime verification
 
-For Databricks work:
+For Databricks data work, follow the mandatory order: pytest → isolated testing-data validation → automatic live/canonical execution when every gate passes. In test validation:
 - Run in the actual target workspace.
 - Confirm actual catalog/schema/Volume and compute.
-- Use an isolated test destination first.
-- Verify schema, row counts and key constraints.
-- Test same-input rerun and failure/recovery where relevant.
+- Resolve and verify the isolated test destination before writing.
+- Validate schema, row counts, keys, quality and reconciliation.
+- Test same-input rerun and failure/recovery where required.
 - Record Delta version and run ID where relevant.
 - Verify test operations did not overwrite live data.
+
+After test validation passes, run the approved live workflow automatically. Confirm canonical destination and recovery/overwrite behavior were reviewed in the plan. Re-check live gates (licence/attribution, source identity, schema, quality, reconciliation, idempotency, permissions and target safety). If any gate fails or an unapproved destructive operation is discovered, stop and report rather than promote.
 
 A local Spark mock or local unit test does not prove Databricks runtime success.
 
@@ -2192,9 +2196,9 @@ Do not claim a push, merge or PR if it has not been confirmed.
 
 ### Stage 9 — Update Notion and progress
 
-Produce copy-ready Notion child-page content containing objective, scope, dependencies, contracts, file plan, completed task IDs, tests, runtime evidence, commit/PR, known gaps and status.
+Notion close-out is a separate learning/review workflow. After each feature, the user supplies the updated GitHub repository/feature link and the Notion feature-page link. If either is missing, stop and ask for both before creating the consolidated feature page. Inspect the GitHub implementation and evidence plus the Notion feature/subfeature pages, then create/update one consolidated Notion feature page describing what was built, how it works, key decisions, storage/data flow, tests, runtime evidence, limitations and learning points. The user reads this page and asks follow-up questions in a separate Notion page; answer those questions directly in that Notion page unless the user explicitly asks for chat answers.
 
-Update `docs/progress.md` only with verified facts. Keep it concise and consistent with Notion.
+Update `docs/progress.md` only with verified facts, using the required concise template. Do not copy the full consolidated learning document into progress.md.
 
 ### Stage 10 — Stop and hand off
 
@@ -2236,196 +2240,67 @@ When asking ChatGPT to generate code:
 - Ask it to explain how to apply the changes through the Databricks Git folder or another named environment.
 - Do not accept invented paths, schemas or assumptions about existing code.
 
-## 7. Genie Code workflow in Databricks browser
+## 7. AI coding-agent workflow (tool-independent)
 
-This protocol targets Genie Code inside the Databricks browser workspace, not a separate terminal-native Genie Code CLI.
+Use this section with Codex, Claude Code or another AI coding agent. The agent is not tied to a particular IDE, terminal or Databricks feature. It must inspect the repository and available environment, and must not assume it has permissions that have not been verified.
 
-### 7.1 Operating limits
+### 7.1 Agent inputs you provide
 
-Genie Code may be able to inspect and edit supported workspace files, notebooks and SQL, explore Unity Catalog metadata and run bounded workspace operations. Actual capabilities depend on workspace configuration, permissions and the current surface.
+Provide only the information that is specific to the task:
+- Feature/subfeature ID and title.
+- Repository URL and intended branch (if not already connected).
+- New requirements, scope changes or decisions not already documented.
+- Approval of the proposed plan before edits.
 
-Do not assume it has unrestricted access to:
-- the computer's local filesystem;
-- arbitrary terminal commands;
-- GitHub account settings;
-- Notion workspace;
-- external APIs or websites;
-- every Databricks feature.
+The agent must read the Project Plan, this Build Guide, `docs/progress.md`, relevant Notion feature/subfeature page(s), repository instructions, current code, tests and Git state before planning. Do not paste all shared rules into each prompt. If access to a source or environment is missing, ask for it rather than guessing.
 
-If the repository is not open as the correct Git folder, the branch is unclear or required workspace capabilities are unavailable, stop and ask the user to establish the correct context.
+### 7.2 Agent operating stages
 
-### 7.2 Genie Code execution stages
+1. **Inspect only:** verify repository, branch, commit, worktree, existing files, tests, contracts, current progress and runtime capabilities. No edits.
+2. **Plan:** define scope, dependencies, contracts, paths, implementation steps, test plan, runtime checks, data destinations, risks and acceptance criteria. Wait for user approval.
+3. **Implement:** change only approved scope; preserve existing work; add/update tests and documentation.
+4. **Validate:** run `pytest`; then run the required testing-data validation in isolated test destinations. See Section 5 for the required test tiers and data-selection policy.
+5. **Promote:** after every required validation gate passes, automatically run the feature's live/canonical tables or live workflow. Promotion must be blocked if licensing/attribution, source identity, schema, quality thresholds, count reconciliation, idempotency, target safety, permissions or any feature-specific live gate is unmet. Do not require a second manual approval merely to run a routine live acceptance when the approved workflow and gates are satisfied. Never bypass a failed gate.
+6. **Review and close:** inspect actual live outputs, compare/reconcile counts and quality, review the Git diff, commit/push only through the agreed workflow, and update Notion and `docs/progress.md` with evidence. Stop after the subfeature.
 
-Use this exact sequence for each subfeature:
+### 7.3 Data-testing policy
 
-**A — Inspect only**
-- Read Project Plan v29, this guide and `docs/progress.md`.
-- Inspect repository, branch, commit, working tree, files, tests, schemas and workspace capabilities.
-- Do not edit or perform write operations.
+**Level 1 — small fixtures:** create synthetic, intentionally designed rows for fast `pytest` tests. Include normal records, missing/null values, invalid types, duplicates, boundary cases and expected failures as appropriate. These fixtures are authored for the test and are not copied as a claim of source representativeness.
 
-**B — Assess**
-- Classify the subfeature as not started, partially implemented, implemented but unverified, verified already or blocked.
-- Provide evidence and identify existing code to reuse.
+**Level 2 — real-source testing:** use the actual provider source and the same parsing/transformation code as live, but write to isolated test destinations. Process all records required by the feature when volume is practical. If the source is too large for a routine test, use a documented representative sample or bounded partition for development integration tests, and separately perform a full-source or scale acceptance test when required. Sampling must be deliberate (e.g., random, stratified, partition-based or edge-case selection), reproducible where possible, and documented with source identity, method, sample size and remaining full-data validation. A sample cannot satisfy a full-source acceptance criterion. Process the complete relevant dataset/area/partition—not unrelated global source data.
 
-**C — Propose**
-- List task IDs, objective, scope, exclusions, dependencies, inputs/outputs, file plan, tests, runtime checks, risks and exit gate.
-- Wait for approval for material changes or risky operations.
+**Level 3 — live acceptance:** execute the approved workflow against canonical live tables only after `pytest` and test-data validation pass and all additional live gates are satisfied. Test and live destinations must be resolved explicitly and must never be ambiguous.
 
-**D — Implement**
-- Change only the approved subfeature.
-- Preserve existing work.
-- Add tests.
-- Do not add dependencies, write to live data, publish data or invoke paid services without approval.
-
-**E — Test**
-- Run static, unit, contract and integration tests as appropriate.
-- Report exact commands/actions and actual results.
-
-**F — Verify in Databricks**
-- Use the actual target workspace.
-- Verify catalog/schema/Volume, isolated test writes, schema, counts, keys, reruns and recovery where relevant.
-- Do not present local tests as runtime proof.
-
-**G — Review Git**
-- Show changed files and diff.
-- Check for secrets, unrelated edits and missing tests.
-- Prepare commit details; only claim commit/push after confirmation.
-
-**H — Update records**
-- Produce copy-ready Notion update.
-- Update `docs/progress.md` only with facts supported by evidence.
-
-**I — Stop**
-- Report exit status and next roadmap item.
-- Do not start the next subfeature automatically.
-
-### 7.3 Genie Code prompt — inspect and plan only
-
-Copy this into Genie Code and replace the bracketed fields:
+### 7.4 Agent prompt — inspect and plan
 
 ```text
-You are working on TripPilot using Project Plan v29 and Unified Build Guide v30.
+Build TripPilot subfeature [Fxx.y — title].
 
-Current roadmap item:
-[Fxx.y — exact subfeature title]
+Read the repository's project instructions, Project Plan v31, Unified Build Guide v31, docs/progress.md, and relevant Notion feature/subfeature documentation. Inspect the actual repository, branch, commit, worktree, existing implementation, tests, schemas/contracts, and runtime capabilities.
 
-Parent feature:
-[Fxx — exact feature title]
-
-Follow the strict F01–F31 order and ascending subfeature order.
-Work on this subfeature only.
-
-PHASE 1 — INSPECT ONLY. Do not edit files or execute write operations.
-
-Inspect the actual Databricks Git folder/repository, branch, working tree,
-current commit, relevant files, tests, docs/progress.md and actual workspace
-capabilities. Use exact task IDs and acceptance criteria from the Unified
-Build Guide v30.
-
-Determine whether this subfeature is:
-Not started / Partially implemented / Implemented but unverified /
-Verified already / Blocked.
-
-Return:
-1. Current state and evidence.
-2. Existing code that should be reused.
-3. Exact task IDs.
-4. Inputs and outputs.
-5. Files to reuse, modify, create or retire.
-6. Tests and runtime checks required.
-7. Risks and capability blockers.
-8. A step-by-step implementation plan.
-
-Do not edit files yet. Wait for my approval.
+Do not edit yet. Confirm this is the next eligible item, report current state and evidence, reuse existing work, and propose a plan with scope, task IDs, file plan, storage destinations, implementation steps, pytest cases, test-data validation, live gates, risks and acceptance criteria. Ask me to approve the plan before making changes. Do not invent missing source details or permissions.
 ```
 
-### 7.4 Genie Code prompt — implement after approval
+### 7.5 Agent prompt — implement and validate after approval
 
 ```text
-I approve the implementation plan for [Fxx.y].
+Implement only the approved TripPilot subfeature. Follow Unified Build Guide v31 and repository instructions. Preserve existing work and unrelated changes. Add/update tests and documentation.
 
-Implement only the approved scope in the current TripPilot Git folder.
+Required workflow: (1) run pytest; (2) when pytest passes, run testing-data validation using the correct isolated test destination, processing the full relevant source when practical or using a documented sample/bounded test when justified; (3) when both required gates pass, execute the approved live/canonical workflow automatically, unless any live safety/governance gate is unmet; (4) verify live outputs and reconciliation; (5) review diff and report actual results. Stop and report on any failure; never bypass a gate, invent results or silently skip live acceptance.
 
-Requirements:
-- Preserve existing verified work and unrelated user changes.
-- Follow the actual repository structure and naming conventions.
-- Complete the existing Fxx.y-Tnn task IDs.
-- Add or update tests with the code.
-- Do not invent source schemas, workspace permissions or runtime results.
-- Use an isolated test destination for data writes.
-- Do not overwrite live tables or perform destructive operations.
-- Do not add paid services or publish data without asking.
-- Keep secrets and raw datasets out of Git.
-
-After implementation:
-1. Show all changed files and explain their purpose.
-2. Run focused tests and relevant broader tests.
-3. Perform required actual Databricks/runtime verification.
-4. Report exact results and failures.
-5. Review the Git diff.
-6. Prepare commit/PR details; do not claim success without confirmation.
-7. Produce copy-ready Notion child-page updates.
-8. Update docs/progress.md only with verified facts.
-9. State remaining gaps and the next roadmap item.
-
-Do not mark the subfeature Verified without full exit evidence.
-Stop after this subfeature.
+Record exact commands, datasets/source identities, sample rationale if used, output locations, row counts/quality/reconciliation, run IDs/Delta versions as applicable, changed files, commit/PR evidence and remaining blockers. Update docs/progress.md only with verified facts. Produce the consolidated Notion feature documentation when I provide its GitHub and Notion references as required by the Build Guide. Stop after this subfeature.
 ```
 
-### 7.5 Genie Code debugging prompt
+### 7.6 Agent debugging prompt
 
 ```text
-Debug the following TripPilot failure without expanding scope.
-
-Feature/subfeature/task:
-[Fxx.y / Fxx.y-Tnn]
-
-Exact error:
-[Paste sanitized error]
-
-Environment:
-[Databricks notebook / SQL Editor / Git folder / CI / other]
-
-Relevant file or notebook:
-[Path]
-
-Expected result:
-[Expected]
-
-Actual result:
-[Actual]
-
-First isolate the failure. Inspect the relevant code, configuration, schema
-and runtime context. Identify the root cause before changing code.
-
-Propose the smallest fix. Explain affected files and regression tests.
-Do not remove validation, suppress exceptions, weaken acceptance criteria
-or claim success without rerunning the failing test.
+Debug [Fxx.y/task] without expanding scope. Inspect the relevant code, configuration, schema and actual runtime context. Distinguish confirmed facts from hypotheses, identify the smallest diagnostic check, explain likely root cause, propose the smallest safe fix, and specify regression tests. Do not weaken validation or claim success without rerunning checks.
 ```
 
-### 7.6 Genie Code review prompt
+### 7.7 Agent review prompt
 
 ```text
-Review the current implementation of [Fxx.y] against the exact acceptance
-criteria in Unified Build Guide v30.
-
-Do not make changes yet.
-
-Check:
-- Task completeness and scope control.
-- Code quality and maintainability.
-- Source provenance and licence handling.
-- Schema and data quality controls.
-- Idempotency and failure recovery.
-- Security and secrets.
-- Test coverage and actual results.
-- Databricks runtime evidence.
-- Git diff and unrelated edits.
-- Notion and docs/progress.md evidence.
-- Portability across computers through the same GitHub remote/Git folder.
-
-Return a criterion-by-criterion PASS / FAIL / NOT VERIFIED table.
-Explain every NOT VERIFIED item. Do not infer success from code existence.
+Review [Fxx.y] against its acceptance criteria and the approved plan. Do not edit. Check scope, maintainability, contracts/grain, quality, provenance/licensing, idempotency/recovery, privacy/security, tests, testing-data validation, live evidence, destination safety, Git diff and documentation. Return PASS/FAIL/NOT VERIFIED for each criterion, cite evidence, and explain every NOT VERIFIED.
 ```
 
 ## 8. Standard prompts for working with ChatGPT
@@ -2436,7 +2311,7 @@ Explain every NOT VERIFIED item. Do not infer success from code existence.
 We are starting TripPilot subfeature [Fxx.y — exact title], under parent
 feature [Fxx — exact title].
 
-Use trippilot-project-plan-v29.md, this Unified Build Guide v30 and the
+Use trippilot-project-plan-v31.md, this Unified Build Guide v31 and the
 current docs/progress.md as the project sources.
 
 Keep Databricks browser UI as a core development environment because I may
@@ -2450,7 +2325,7 @@ Do not start coding yet. First:
 3. Inspect actual repository files, branch, commit, working-tree state,
    existing implementation and tests. Reuse verified work.
 4. Identify the Databricks browser pages/tools needed: Git folder, Workspace,
-   Catalog Explorer, notebook, SQL Editor, compute or Genie Code.
+   Catalog Explorer, notebook, SQL Editor, compute or an AI coding agent.
 5. Identify actual workspace capabilities and permissions. Do not assume
    Unity Catalog, Volumes, compute, network access or AI features.
 6. Explain the subfeature in plain English and why it exists.
@@ -2518,7 +2393,7 @@ Last known branch: [branch or unknown]
 Last known commit: [SHA or unknown]
 Last recorded task: [Fxx.y-Tnn or unknown]
 
-Use Project Plan v29, Unified Build Guide v30, docs/progress.md and the
+Use Project Plan v31, Unified Build Guide v31, docs/progress.md and the
 matching Notion child page if available. Keep Databricks browser UI central.
 
 First do a resume check only:
@@ -2643,8 +2518,7 @@ Databricks Free Edition can be suitable for learning and bounded portfolio devel
 
 Keep source data and code backed up outside the workspace. Use bounded data samples and batches. If a quota or permission warning appears, stop and reassess rather than repeatedly retrying.
 
-Genie Code may have usage/pricing considerations separate from general workspace access. Before extensive agent use:
-- Check the current Genie Code allowance and pricing shown in your account.
+AI coding agents may have separate usage limits or costs. Before extensive use, check the tool’s current allowance and pricing.
 - Avoid repeated autonomous runs on broad prompts.
 - Ask for an inspection/plan before implementation.
 - Keep each prompt scoped to one subfeature.
@@ -2714,7 +2588,7 @@ These are worked examples from the prior human implementation guide. They demons
 **F01.1 — Repository baseline and architecture**
 
 - Inspect the repository tree and existing project files.
-- Confirm the agreed top-level layout against Project Plan v29.
+- Confirm the agreed top-level layout against Project Plan v31.
 - Create only missing files/directories needed for the current baseline.
 - Add README, project metadata, `.gitignore`, configuration examples and `docs/progress.md` only if missing.
 - Keep credentials, API keys, tokens and raw source datasets out of Git.
@@ -2939,4 +2813,4 @@ The original operational guide referenced these official documentation entry poi
 
 ---
 
-**End of Unified Build Guide v30.** Use this file as the day-to-day implementation manual. Keep Project Plan v29 as its architecture companion and `docs/progress.md` as the record of actual implementation evidence.
+**End of Unified Build Guide v31.** Use this file as the day-to-day implementation manual. Keep Project Plan v31 as its architecture companion and `docs/progress.md` as the record of actual implementation evidence.
