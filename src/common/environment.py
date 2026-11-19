@@ -22,7 +22,10 @@ VALID_RUN_MODES = ("test", "live")
 # Canonical development table names (run mode "live").
 LIVE_TABLES = {
     "bronze": "trippilot_dev.bronze.airbnb_listings_bronze",
-    "bronze_control": "trippilot_dev.bronze.airbnb_ingestion_control",
+    # Post-cleanup follow-up (R1): the control table has only ever held
+    # listings run history, so its name - and this key - now say so,
+    # matching the per-dataset calendar/reviews convention below.
+    "listings_control": "trippilot_dev.bronze.airbnb_listings_ingestion_control",
     "silver": "trippilot_dev.silver.airbnb_listings_silver",
     "silver_rejected": "trippilot_dev.silver.airbnb_listings_rejected",
     "quality_results": "trippilot_dev.ops.quality_results",
@@ -36,10 +39,10 @@ LIVE_TABLES = {
     # resolves the isolated *_test variants via the shared rules above.
     "calendar_bronze": "trippilot_dev.bronze.airbnb_calendar_bronze",
     "reviews_bronze": "trippilot_dev.bronze.airbnb_reviews_bronze",
-    # F06.3: per-dataset ingestion-control tables. The listings
-    # control table above and its history stay untouched; calendar and
-    # reviews record their run outcomes in their own tables so one
-    # dataset's rows can never influence another's decision.
+    # F06.3: per-dataset ingestion-control tables (with the listings
+    # control renamed to the same convention above): every dataset
+    # records its run outcomes in its own table so one dataset's rows
+    # can never influence another's decision.
     "calendar_control": "trippilot_dev.bronze.airbnb_calendar_ingestion_control",
     "reviews_control": "trippilot_dev.bronze.airbnb_reviews_ingestion_control",
 }

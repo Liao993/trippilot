@@ -58,7 +58,7 @@ QUALITY_RESULTS_COLUMNS: dict[str, str] = {
 # Data tables (bronze, silver, ...) are intentionally absent: they are
 # created by their ingestion flows, not by operational setup.
 OPERATIONAL_TABLE_SHAPES: Mapping[str, Mapping[str, str]] = {
-    "bronze_control": LISTINGS_CONTROL_COLUMNS,
+    "listings_control": LISTINGS_CONTROL_COLUMNS,
     "calendar_control": PER_DATASET_CONTROL_COLUMNS,
     "reviews_control": PER_DATASET_CONTROL_COLUMNS,
     "quality_results": QUALITY_RESULTS_COLUMNS,

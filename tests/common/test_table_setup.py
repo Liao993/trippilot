@@ -146,7 +146,7 @@ def test_ensure_operational_table_ok_when_shape_complete():
 
 def test_ensure_operational_table_evolves_legacy_schema():
     legacy = StubSpark(existing_columns=list(LISTINGS_CONTROL_COLUMNS)[:8])
-    table = "trippilot_dev.bronze.airbnb_ingestion_control"
+    table = "trippilot_dev.bronze.airbnb_listings_ingestion_control"
 
     action = ensure_operational_table(legacy, table, LISTINGS_CONTROL_COLUMNS)
 
@@ -163,7 +163,7 @@ def test_ensure_operational_tables_touches_only_operational_keys():
     spark = StubSpark(existing_columns=PER_DATASET_CONTROL_COLUMNS)
     tables = {
         "bronze": "x.bronze.listings",
-        "bronze_control": "x.bronze.ctrl",
+        "listings_control": "x.bronze.ctrl",
         "calendar_control": "x.bronze.ccal",
         "reviews_control": "x.bronze.crev",
         "quality_results": "x.ops.q",
@@ -173,7 +173,7 @@ def test_ensure_operational_tables_touches_only_operational_keys():
     actions = ensure_operational_tables(spark, tables)
 
     assert set(actions) == {
-        "bronze_control",
+        "listings_control",
         "calendar_control",
         "reviews_control",
         "quality_results",
@@ -197,7 +197,7 @@ def test_ensure_schemas_creates_each_unique_schema_once():
 
 def test_operational_shapes_cover_expected_keys():
     assert set(OPERATIONAL_TABLE_SHAPES) == {
-        "bronze_control",
+        "listings_control",
         "calendar_control",
         "reviews_control",
         "quality_results",
