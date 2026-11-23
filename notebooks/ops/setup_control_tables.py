@@ -14,7 +14,12 @@
 #   explicit dataset tag (F06.3).
 # - ops.quality_results: run-quality results sink.
 # - ops.source_file_manifest: created from the tested ManifestStore
-#   contract (17 fields, idempotent MERGE upserts).
+#   contract (18 fields since F07.3 adds the optional classified
+#   error_type; an existing table is evolved in place), idempotent
+#   MERGE upserts.
+# - ops.source_file_availability: created from the tested
+#   AvailabilityStore contract (F07.3-T01), the evidence-backed
+#   ledger for expected assets the source did not publish.
 #
 # RUN_MODE selects the destination exactly like the ingestion notebooks:
 # "test" (default) initializes the isolated *_test tables; "live"
@@ -44,6 +49,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.common.environment import resolve_tables, validate_run_mode
+from src.common.source_availability import AvailabilityStore
 from src.common.source_manifest_store import ManifestStore
 from src.common.table_setup import ensure_operational_tables, ensure_schemas
 
@@ -60,4 +66,8 @@ for key, action in sorted(actions.items()):
 manifest_store = ManifestStore(tables["source_manifest"], spark=spark)
 manifest_store.ensure_table()
 print(f"{'source_manifest':18} {'ready':8} {tables['source_manifest']}")
+
+availability_store = AvailabilityStore(tables["source_availability"], spark=spark)
+availability_store.ensure_table()
+print(f"{'source_availability':18} {'ready':8} {tables['source_availability']}")
 print("Operational tables ready.")

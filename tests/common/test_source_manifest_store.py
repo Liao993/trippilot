@@ -79,8 +79,10 @@ def test_create_table_sql_matches_the_contract():
     assert "source_file_id STRING NOT NULL" in sql
     assert "landing_path STRING" in sql
     assert "error_message STRING" in sql
+    assert "error_type STRING" in sql
     assert "landing_path STRING NOT NULL" not in sql
     assert "error_message STRING NOT NULL" not in sql
+    assert "error_type STRING NOT NULL" not in sql
 
 
 def test_invalid_table_names_are_rejected():
@@ -144,6 +146,7 @@ def test_upsert_renders_null_for_absent_optional_fields():
 
     assert "NULL AS landing_path" in sql
     assert "NULL AS error_message" in sql
+    assert "NULL AS error_type" in sql
 
 
 def test_upsert_rejects_boolean_values():
@@ -187,13 +190,32 @@ def test_store_upsert_executes_the_merge_sql():
 
 
 def test_store_ensure_table_executes_create_sql():
-    spark = StubSpark()
+    spark = StubSpark(rows=[{"col_name": field} for field in MANIFEST_FIELDS])
     store = ManifestStore(table_name=TEST_TABLE, spark=spark)
 
     store.ensure_table()
 
-    assert len(spark.sql_log) == 1
     assert spark.sql_log[0].startswith("CREATE TABLE IF NOT EXISTS")
+    assert spark.sql_log[1].startswith("DESCRIBE")
+    # The table already has every contract column: no ALTER runs.
+    assert not any(sql.startswith("ALTER") for sql in spark.sql_log)
+
+
+def test_store_ensure_table_evolves_a_legacy_shape_by_adding_error_type():
+    # A pre-F07.3 table lacks only error_type (F07.3-T01).
+    legacy_columns = [field for field in MANIFEST_FIELDS if field != "error_type"]
+    spark = StubSpark(rows=[{"col_name": field} for field in legacy_columns])
+    store = ManifestStore(table_name=TEST_TABLE, spark=spark)
+
+    store.ensure_table()
+
+    alter_statements = [sql for sql in spark.sql_log if sql.startswith("ALTER")]
+    assert len(alter_statements) == 1
+    assert "ADD COLUMNS" in alter_statements[0]
+    assert "error_type STRING" in alter_statements[0]
+    # Only the missing column is added; existing columns are untouched.
+    assert "error_message" not in alter_statements[0]
+    assert "landing_path" not in alter_statements[0]
 
 
 def test_read_returns_the_stored_row():
@@ -267,6 +289,7 @@ def test_state_transition_updates_only_operational_fields_in_sql():
         "'/Volumes/dev/bronze/insideairbnb/listings__abc.csv.gz' AS landing_path" in sql
     )
     assert "NULL AS error_message" in sql
+    assert "NULL AS error_type" in sql
 
 
 def test_duplicate_upserts_produce_the_same_merge_and_cannot_append_rows():

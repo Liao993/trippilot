@@ -8,6 +8,7 @@ tables.
 """
 
 import gzip
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -179,6 +180,9 @@ def test_failed_attempt_is_visible_and_a_controlled_retry_lands(tmp_path, monkey
     failed_row = store.read(record_id)
     assert failed_row["processing_state"] == "failed"
     assert "simulated interruption" in failed_row["error_message"]
+    # F07.3-T01: a landing-copy interruption is classified acquisition,
+    # distinct from a staged-content parse/schema problem.
+    assert failed_row["error_type"] == "acquisition"
 
     monkeypatch.undo()
     retried = _acquire(source, landing_root, store)
@@ -195,6 +199,10 @@ def test_failed_attempt_is_visible_and_a_controlled_retry_lands(tmp_path, monkey
         "landed",
     ]
     assert len(store.rows) == 1
+    # F07.3-T02: a successful retry clears the prior failure diagnostics.
+    cleared = store.read(record_id)
+    assert cleared["error_type"] is None
+    assert cleared["error_message"] is None
 
 
 def test_reprocess_resolves_the_landing_path_without_the_staged_file(tmp_path):
@@ -320,6 +328,8 @@ def test_one_files_failure_never_changes_another_files_status(tmp_path):
     assert len(bad_rows) == 1
     assert bad_rows[0]["processing_state"] == "failed"
     assert "file signature" in bad_rows[0]["error_message"]
+    # F07.3-T01: a staged-content problem is classified parse_or_schema.
+    assert bad_rows[0]["error_type"] == "parse_or_schema"
 
 
 def test_missing_staged_file_produces_no_manifest_row(tmp_path):
@@ -332,3 +342,76 @@ def test_missing_staged_file_produces_no_manifest_row(tmp_path):
 
     assert store.rows == {}
     assert store.upserts == []
+
+
+def test_plain_csv_without_header_fails_as_parse_or_schema(tmp_path):
+    landing_root = _source_root(tmp_path)
+    staged = (
+        landing_root / "_staging" / "insideairbnb" / "toronto" / "neighbourhoods.csv"
+    )
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text("\n", encoding="utf-8")
+    store = _store(landing_root)
+    metadata = _metadata(staged)
+    metadata["file_type"] = "csv"
+
+    with pytest.raises(ValueError, match="no header line"):
+        _acquire(staged, landing_root, store, metadata)
+
+    rows = [r for r in store.rows.values() if r["source_path"] == str(staged)]
+    assert len(rows) == 1
+    assert rows[0]["processing_state"] == "failed"
+    assert rows[0]["error_type"] == "parse_or_schema"
+
+
+def test_non_feature_collection_geojson_fails_as_parse_or_schema(tmp_path):
+    landing_root = _source_root(tmp_path)
+    staged = (
+        landing_root
+        / "_staging"
+        / "insideairbnb"
+        / "toronto"
+        / "neighbourhoods.geojson"
+    )
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_text('{"type": "Feature"}', encoding="utf-8")
+    store = _store(landing_root)
+    metadata = _metadata(staged)
+    metadata["file_type"] = "geojson"
+
+    with pytest.raises(ValueError, match="FeatureCollection"):
+        _acquire(staged, landing_root, store, metadata)
+
+    rows = [r for r in store.rows.values() if r["source_path"] == str(staged)]
+    assert len(rows) == 1
+    assert rows[0]["processing_state"] == "failed"
+    assert rows[0]["error_type"] == "parse_or_schema"
+
+
+def test_landing_conflict_is_classified_acquisition(tmp_path):
+    landing_root = _source_root(tmp_path)
+    store = _store(landing_root)
+    corrected = _staged(tmp_path, name="listings.csv.gz", text="id,name\n1,delta\n")
+
+    # Plant stale bytes at the exact hash-versioned landing path this
+    # corrected file will resolve to: the immutable-landing protection
+    # must refuse to overwrite it and classify the refusal as an
+    # acquisition (landing-side) failure, not a staged-content problem.
+    corrected_hash = hashlib.sha256(corrected.read_bytes()).hexdigest()
+    conflict_path = (
+        landing_root
+        / "insideairbnb"
+        / "toronto"
+        / "2026-09-16"
+        / f"listings__{corrected_hash[:12]}.csv.gz"
+    )
+    conflict_path.parent.mkdir(parents=True, exist_ok=True)
+    conflict_path.write_bytes(b"stale bytes under a familiar name")
+
+    with pytest.raises(ValueError, match="already exists with different content"):
+        _acquire(corrected, landing_root, store, _metadata(corrected))
+
+    rows = [r for r in store.rows.values() if r["source_path"] == str(corrected)]
+    assert len(rows) == 1
+    assert rows[0]["processing_state"] == "failed"
+    assert rows[0]["error_type"] == "acquisition"

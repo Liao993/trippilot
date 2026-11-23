@@ -25,6 +25,14 @@ VALID_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "landed": (),
     "failed": (),
 }
+# F07.3-T01: controlled failure classification for failed records. A
+# staged-content problem (byte signature, header, JSON/FeatureCollection
+# structure) is a parse_or_schema failure; everything else on the
+# acquisition path (staging placement, landing copy, immutable-landing
+# conflicts) is an acquisition failure. Optional on failed records for
+# backward compatibility with pre-F07.3 history; Bronze-level validation
+# failures are recorded separately in the per-dataset control tables.
+ALLOWED_ERROR_TYPES = ("acquisition", "parse_or_schema")
 SUPPORTED_FILE_TYPES = ("csv", "csv.gz", "tsv", "json", "geojson", "zip", "parquet")
 DEFAULT_MAX_BYTE_SIZE = 2 * 1024**3  # 2 GiB
 MAX_ERROR_MESSAGE_LENGTH = 500
@@ -223,6 +231,16 @@ def validate_source_metadata(
                 "error_message appears to contain a credential; sanitize it first"
             )
 
+    error_type = record.get("error_type")
+    if _is_nonempty_string(error_type):
+        if state != "failed":
+            errors.append("error_type is only allowed when processing_state is failed")
+        if error_type not in ALLOWED_ERROR_TYPES:
+            errors.append(
+                f"Invalid error_type {error_type!r}; expected one of: "
+                + ", ".join(ALLOWED_ERROR_TYPES)
+            )
+
     return errors
 
 
@@ -250,10 +268,16 @@ def apply_state_transition(
     to_state: str,
     error_message: str | None = None,
     landing_path: str | None = None,
+    error_type: str | None = None,
     *,
     landing_path_prefixes: Sequence[str] = ("/Volumes/",),
 ) -> dict[str, Any]:
-    """Return a NEW record copy in to_state; the original stays unchanged."""
+    """Return a NEW record copy in to_state; the original stays unchanged.
+
+    error_type (F07.3-T01) optionally classifies the failure alongside
+    error_message; it must come from ALLOWED_ERROR_TYPES and is cleared
+    together with error_message on any non-failed target state.
+    """
     validate_state_transition(record.get("processing_state"), to_state)
 
     updated = dict(record)
@@ -263,8 +287,16 @@ def apply_state_transition(
                 "error_message is required when transitioning to the failed state"
             )
         updated["error_message"] = sanitize_error_message(str(error_message))
+        if error_type is not None:
+            if error_type not in ALLOWED_ERROR_TYPES:
+                raise ValueError(
+                    f"Invalid error_type {error_type!r}; expected one of: "
+                    + ", ".join(ALLOWED_ERROR_TYPES)
+                )
+            updated["error_type"] = error_type
     else:
         updated.pop("error_message", None)
+        updated.pop("error_type", None)
     if to_state == "landed":
         if not _is_nonempty_string(landing_path):
             raise ValueError(

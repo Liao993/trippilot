@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+from src.airbnb.geojson_reader import parse_geojson_features
 from src.airbnb.source_inspection import (
     check_required_columns,
     inspect_csv_gz_header,
@@ -360,3 +361,34 @@ def test_geojson_inspection_rejects_blank_schema_labels(tmp_path):
 
     with pytest.raises(ValueError, match="schema_label"):
         inspect_geojson(source, schema_label="   ")
+
+
+def test_geojson_rerun_and_parser_agree_on_rows_and_counts(tmp_path):
+    # F07.3-T02: repeating the same geometry source must be idempotent
+    # at every step - the parser yields identical rows, the inspector
+    # reports identical counts and fingerprint - so a rerun (or a
+    # force-reload replacement of the same snapshot) can never drift
+    # from the first attempt.
+    source = _write_geojson(
+        tmp_path / "n.geojson", [_feature("A"), _feature("B"), _feature("C")]
+    )
+
+    first_rows = parse_geojson_features(source)
+    second_rows = parse_geojson_features(source)
+    first = inspect_geojson(source, schema_label="neighbourhood-geojson")
+    second = inspect_geojson(source, schema_label="neighbourhood-geojson")
+
+    assert first_rows == second_rows
+    assert first["feature_count"] == second["feature_count"] == len(first_rows)
+    assert first["schema_fingerprint"] == second["schema_fingerprint"]
+    assert (
+        first["columns"]
+        == second["columns"]
+        == [
+            "neighbourhood",
+            "neighbourhood_group",
+        ]
+    )
+    # Every parsed row keeps its geometry verbatim: the same number of
+    # geometry objects flows into Bronze on every rerun.
+    assert all(row["geometry_json"] is not None for row in first_rows)

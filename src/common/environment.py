@@ -34,6 +34,10 @@ LIVE_TABLES = {
     # created. A feature that needs it should create the table
     # populated and re-add the key here.
     "source_manifest": "trippilot_dev.ops.source_file_manifest",
+    # F07.3: evidence-backed availability ledger for expected assets
+    # that the source did not publish (never a duplicate of the
+    # manifest, which only records acquired files).
+    "source_availability": "trippilot_dev.ops.source_file_availability",
     # F06.2: separate Bronze data products for the calendar and review
     # datasets - never conflated with the listings table. Test mode
     # resolves the isolated *_test variants via the shared rules above.

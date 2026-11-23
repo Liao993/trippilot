@@ -21,11 +21,13 @@ from typing import Any
 from src.common.source_manifest import (
     validate_source_metadata,
 )
+from src.common.table_setup import build_add_columns_sql
 
 # Declared by contracts/ops/source_file_manifest.yml.
 MANIFEST_TABLE = "trippilot_dev.ops.source_file_manifest"
 
 # Contract field order: source identity, metadata, operational fields.
+# error_type (F07.3-T01) is the optional classified failure reason.
 MANIFEST_FIELDS: tuple[str, ...] = (
     "source_file_id",
     "source_family",
@@ -44,7 +46,16 @@ MANIFEST_FIELDS: tuple[str, ...] = (
     "run_id",
     "processing_state",
     "error_message",
+    "error_type",
 )
+
+# Delta column types per contract field (byte_size is the only integer).
+MANIFEST_COLUMN_TYPES: dict[str, str] = {
+    field: ("BIGINT" if field == "byte_size" else "STRING") for field in MANIFEST_FIELDS
+}
+
+# Columns that may hold NULL: the optional operational fields.
+NULLABLE_FIELDS = ("landing_path", "error_message", "error_type")
 
 # Only the operational state of the latest attempt may change after a
 # row exists. Everything else is immutable in the table.
@@ -53,6 +64,7 @@ UPDATABLE_FIELDS: tuple[str, ...] = (
     "landing_path",
     "run_id",
     "error_message",
+    "error_type",
 )
 
 _TABLE_NAME_PATTERN = re.compile(
@@ -86,8 +98,8 @@ def build_create_table_sql(table_name: str) -> str:
     _validate_table_name(table_name)
     columns = []
     for field in MANIFEST_FIELDS:
-        sql_type = "BIGINT" if field == "byte_size" else "STRING"
-        required = field not in ("landing_path", "error_message")
+        sql_type = MANIFEST_COLUMN_TYPES[field]
+        required = field not in NULLABLE_FIELDS
         columns.append(f"  {field} {sql_type}" + (" NOT NULL" if required else ""))
     return (
         f"CREATE TABLE IF NOT EXISTS {table_name} (\n"
@@ -158,8 +170,25 @@ class ManifestStore:
         return self.spark
 
     def ensure_table(self) -> None:
-        """Create the manifest table if it does not exist."""
-        self._require_spark().sql(build_create_table_sql(self.table_name))
+        """Create the manifest table if missing; evolve it forward.
+
+        CREATE TABLE IF NOT EXISTS only fills gaps. An existing table
+        (for example the live manifest created before F07.3) is evolved
+        forward with ALTER ADD COLUMNS - here adding the error_type
+        column - without touching any existing row, mirroring the
+        shared operational-table evolution in src/common/table_setup.
+        """
+        spark = self._require_spark()
+        spark.sql(build_create_table_sql(self.table_name))
+        existing = [
+            str(row["col_name"])
+            for row in spark.sql(f"DESCRIBE {self.table_name}").collect()
+        ]
+        alter_sql = build_add_columns_sql(
+            self.table_name, MANIFEST_COLUMN_TYPES, existing
+        )
+        if alter_sql is not None:
+            spark.sql(alter_sql)
 
     def upsert(self, record: dict[str, Any]) -> dict[str, Any]:
         """Validate and merge one record; return the stored record.
