@@ -33,3 +33,19 @@ sources:
           reviews:
             file: reviews.csv.gz
             required_identifier: id
+          # F07.1/F07.2: the summary and neighbourhood reference files
+          # are registered per-file in the source manifest (distinct
+          # file_type + content hash); these entries record their
+          # dataset identity and key fields only.
+          summary_listings:
+            file: listings.csv
+            required_identifier: id
+          summary_reviews:
+            file: reviews.csv
+            required_identifier: listing_id
+          neighbourhoods:
+            file: neighbourhoods.csv
+            required_identifier: neighbourhood
+          neighbourhood_geometry:
+            file: neighbourhoods.geojson
+            required_identifier: neighbourhood

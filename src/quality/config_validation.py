@@ -26,6 +26,10 @@ CONFIG_FILES: dict[str, str] = {
     "contracts/airbnb/bronze_listings.yml": "bronze_contract",
     "contracts/airbnb/bronze_calendar.yml": "bronze_contract",
     "contracts/airbnb/bronze_reviews.yml": "bronze_contract",
+    "contracts/airbnb/bronze_listings_summary.yml": "bronze_contract",
+    "contracts/airbnb/bronze_reviews_summary.yml": "bronze_contract",
+    "contracts/airbnb/bronze_neighbourhoods.yml": "bronze_contract",
+    "contracts/airbnb/bronze_neighbourhood_geometry.yml": "bronze_contract",
     "contracts/airbnb/silver_listings.yml": "silver_contract",
     "contracts/ops/source_file_manifest.yml": "source_manifest_contract",
 }
@@ -37,6 +41,12 @@ BRONZE_CONTRACT_RULES_KEYS: dict[str, str] = {
     "contracts/airbnb/bronze_listings.yml": "bronze_listings",
     "contracts/airbnb/bronze_calendar.yml": "bronze_calendar",
     "contracts/airbnb/bronze_reviews.yml": "bronze_reviews",
+    "contracts/airbnb/bronze_listings_summary.yml": "bronze_listings_summary",
+    "contracts/airbnb/bronze_reviews_summary.yml": "bronze_reviews_summary",
+    "contracts/airbnb/bronze_neighbourhoods.yml": "bronze_neighbourhoods",
+    "contracts/airbnb/bronze_neighbourhood_geometry.yml": (
+        "bronze_neighbourhood_geometry"
+    ),
 }
 
 

@@ -1,0 +1,32 @@
+bronze_neighbourhoods:
+  table: trippilot_dev.bronze.airbnb_neighbourhoods_bronze
+  source: insideairbnb
+  # Observed Toronto 2026-09-16 neighbourhoods.csv (F07.1-T01
+  # evidence): 2 columns, 140 rows, grain ONE ROW PER official
+  # neighbourhood name (all 140 names unique). neighbourhood_group is
+  # blank in every Toronto row - preserved as-is, never coerced. The
+  # CSV is a SEPARATE asset from the GeoJSON geometry product
+  # (bronze_neighbourhood_geometry): the two representations are never
+  # combined into a single raw asset (F07.2-T02).
+  required_columns:
+    - neighbourhood_group
+    - neighbourhood
+  source_types: string
+  write_policy: replace_city_snapshot
+  corrected_file_policy: explicit_reprocess_replace_slice
+  # Row-level quality policy (F07.2-T02): the neighbourhood name must
+  # be present and non-blank; the blank group column is a legitimate
+  # Toronto source state and is not enforced. Invalid rows are
+  # RETAINED with _quality_status/_quality_reason.
+  row_validation:
+    required_fields:
+      - neighbourhood
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256

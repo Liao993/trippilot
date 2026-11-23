@@ -166,6 +166,10 @@ def test_ensure_operational_tables_touches_only_operational_keys():
         "listings_control": "x.bronze.ctrl",
         "calendar_control": "x.bronze.ccal",
         "reviews_control": "x.bronze.crev",
+        "listings_summary_control": "x.bronze.csum",
+        "reviews_summary_control": "x.bronze.crsum",
+        "neighbourhoods_control": "x.bronze.cnbr",
+        "neighbourhood_geometry_control": "x.bronze.cgeo",
         "quality_results": "x.ops.q",
         "source_manifest": "x.ops.manifest",
     }
@@ -176,6 +180,10 @@ def test_ensure_operational_tables_touches_only_operational_keys():
         "listings_control",
         "calendar_control",
         "reviews_control",
+        "listings_summary_control",
+        "reviews_summary_control",
+        "neighbourhoods_control",
+        "neighbourhood_geometry_control",
         "quality_results",
     }
     created = {
@@ -183,7 +191,16 @@ def test_ensure_operational_tables_touches_only_operational_keys():
         for c in spark.calls
         if c.startswith("CREATE TABLE")
     }
-    assert created == {"x.bronze.ctrl", "x.bronze.ccal", "x.bronze.crev", "x.ops.q"}
+    assert created == {
+        "x.bronze.ctrl",
+        "x.bronze.ccal",
+        "x.bronze.crev",
+        "x.bronze.csum",
+        "x.bronze.crsum",
+        "x.bronze.cnbr",
+        "x.bronze.cgeo",
+        "x.ops.q",
+    }
 
 
 def test_ensure_schemas_creates_each_unique_schema_once():
@@ -200,5 +217,22 @@ def test_operational_shapes_cover_expected_keys():
         "listings_control",
         "calendar_control",
         "reviews_control",
+        "listings_summary_control",
+        "reviews_summary_control",
+        "neighbourhoods_control",
+        "neighbourhood_geometry_control",
         "quality_results",
     }
+
+
+def test_summary_and_neighbourhood_controls_use_per_dataset_shape():
+    # The F07.2 datasets record their runs in the F06.3 per-dataset
+    # shape (dataset-tagged) so one dataset's rows never leak into
+    # another's decision.
+    for key in (
+        "listings_summary_control",
+        "reviews_summary_control",
+        "neighbourhoods_control",
+        "neighbourhood_geometry_control",
+    ):
+        assert OPERATIONAL_TABLE_SHAPES[key] is PER_DATASET_CONTROL_COLUMNS
