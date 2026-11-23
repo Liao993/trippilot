@@ -21,11 +21,12 @@ The flow is the tested F06.2/F06.3 behavior, unchanged:
 * Rows failing the contract's required-field/date checks are RETAINED
   with an explicit ``_quality_status`` / ``_quality_reason``, never
   dropped, quarantined or coerced.
-* The dataset's own ingestion-control table (dataset-tagged, F06.3)
-  records the run: an exact rerun skips, a corrected file is blocked
-  unless ``force_reload`` authorizes the replacement, and read/write
-  failures are recorded on the control row before the exception
-  propagates.
+* The unified ingestion manifest (F07.4: ONE shared
+  ops.ingestion_manifest per environment, one row per source file per
+  run) records the run: an exact rerun skips, a corrected file is
+  blocked unless ``force_reload`` authorizes the replacement, and
+  read/write failures are recorded on the manifest row before the
+  exception propagates.
 * One atomic Delta overwrite with ``replaceWhere`` replaces only this
   city/snapshot slice; ``merge_schema`` lets the table pick up the
   provenance and quality columns on first creation.
@@ -57,9 +58,11 @@ from src.airbnb.source_inspection import (
 )
 from src.common.environment import (
     resolve_table,
+    validate_destination,
     validate_force_reload,
     validate_run_mode,
 )
+from src.common.ingestion_manifest import IngestionManifestStore
 from src.common.provenance import build_provenance_columns, build_run_id
 from src.common.run_controls import (
     decide_ingestion_action,
@@ -68,10 +71,6 @@ from src.common.run_controls import (
 )
 from src.common.source_acquisition import verify_landed_record
 from src.common.source_manifest_store import ManifestStore
-from src.common.table_setup import (
-    PER_DATASET_CONTROL_COLUMNS,
-    ensure_operational_table,
-)
 from src.quality.contract_loader import get_table_rules, load_contract
 
 PROVENANCE_COLUMNS = (
@@ -130,13 +129,14 @@ class BronzeDatasetSpec:
     """Everything the shared flow needs to know about one dataset.
 
     Attributes:
-        dataset: dataset tag for control rows and log messages
-            (``calendar``, ``reviews``, ...).
+        dataset: dataset tag for ingestion-manifest rows and log
+            messages (``calendar``, ``reviews``, ...).
         schema_label: label for header-inspection errors.
         contract_path: repo-relative Bronze contract YAML path.
         rules_key: rules key inside that contract.
-        bronze_key / control_key / manifest_key: environment-resolver
-            keys for the run-mode-resolved destinations.
+        bronze_key / manifest_key: environment-resolver keys for the
+            run-mode-resolved destinations. The run outcome goes to the
+            ONE shared ingestion manifest (F07.4).
         default_source_file_id: notebook widget default.
     """
 
@@ -145,60 +145,8 @@ class BronzeDatasetSpec:
     contract_path: str
     rules_key: str
     bronze_key: str
-    control_key: str
     manifest_key: str = "source_manifest"
     default_source_file_id: str = ""
-
-
-def sql_string_literal(value: str) -> str:
-    """Quote a value as a single-quoted SQL string literal."""
-    escaped = str(value).replace("'", "''")
-    return f"'{escaped}'"
-
-
-def build_control_insert_sql(
-    control_table: str,
-    *,
-    city: str,
-    snapshot_date: str,
-    run_id: str,
-    started_at_utc: str,
-    source_file_id: str,
-    prior_source_file_id: str | None,
-    dataset: str,
-) -> str:
-    """Return the control-row INSERT that starts a run (F06.3-T02)."""
-    prior = (
-        "NULL"
-        if prior_source_file_id is None
-        else sql_string_literal(prior_source_file_id)
-    )
-    return (
-        f"INSERT INTO {control_table} VALUES ("
-        f"{sql_string_literal(city)}, "
-        f"{sql_string_literal(snapshot_date)}, "
-        f"{sql_string_literal(run_id)}, "
-        "'running', 0, "
-        f"{sql_string_literal(started_at_utc)}, NULL, NULL, "
-        f"{sql_string_literal(source_file_id)}, {prior}, "
-        f"{sql_string_literal(dataset)})"
-    )
-
-
-def build_control_success_sql(
-    control_table: str,
-    *,
-    run_id: str,
-    row_count: int,
-    completed_at_utc: str,
-) -> str:
-    """Return the control-row UPDATE that records a successful run."""
-    return (
-        f"UPDATE {control_table} SET status = 'success', "
-        f"row_count = {int(row_count)}, "
-        f"completed_at_utc = {sql_string_literal(completed_at_utc)}, "
-        f"error_message = NULL WHERE run_id = {sql_string_literal(run_id)}"
-    )
 
 
 def run_bronze_ingestion(
@@ -207,13 +155,23 @@ def run_bronze_ingestion(
     source_file_id: str,
     run_mode: str = "test",
     force_reload: str | bool = False,
+    run_id: str | None = None,
 ) -> dict:
     """Run the complete shared Bronze ingestion flow for one dataset.
 
     Returns a summary dict with the run identity, row counts and the
     verification/snapshot DataFrames for display. Raises
     AssertionError when the run must be skipped, and propagates
-    read/write exceptions only after recording them on the control row.
+    read/write exceptions only after recording them on the manifest
+    row. ``run_id`` optionally carries a shared identifier so one
+    ingestion run loading several assets writes one manifest row per
+    asset under the same run identifier (F07.4); when omitted a fresh
+    run identity is built.
+
+    Destination safety (F07.4): every target is resolved through the
+    environment resolver and guarded against cross-catalog writes - a
+    test run can never touch ``trippilot_dev`` and a live run can
+    never touch ``trippilot_test``.
     """
     # The pyspark import stays inside the function so CI (which has no
     # Databricks-provided libraries) can import this module for the
@@ -224,8 +182,12 @@ def run_bronze_ingestion(
     force_reload = validate_force_reload(force_reload)
 
     manifest_table = resolve_table(spec.manifest_key, run_mode)
-    bronze_table = resolve_table(spec.bronze_key, run_mode)
-    control_table = resolve_table(spec.control_key, run_mode)
+    bronze_table = validate_destination(
+        resolve_table(spec.bronze_key, run_mode), run_mode
+    )
+    ingestion_manifest_table = validate_destination(
+        resolve_table("ingestion_manifest", run_mode), run_mode
+    )
 
     contract = load_contract(repo_root() / spec.contract_path)
     rules = get_table_rules(contract, spec.rules_key)
@@ -236,7 +198,7 @@ def run_bronze_ingestion(
 
     print(f"Manifest table: {manifest_table}")
     print(f"Bronze target:  {bronze_table}")
-    print(f"Control table:  {control_table}")
+    print(f"Ingestion manifest: {ingestion_manifest_table}")
     print(
         f"Contract:       {spec.contract_path} "
         f"({len(required_columns)} required columns)"
@@ -270,15 +232,14 @@ def run_bronze_ingestion(
     source = source_record["source_family"]
     dataset = spec.dataset
 
-    # F06.3-T01: dataset-scoped ingestion-control decision. The control
-    # table is created/repaired from the shared canonical shape.
-    ensure_operational_table(spark, control_table, PER_DATASET_CONTROL_COLUMNS)
-    existing_controls = [
-        row.asDict()
-        for row in spark.table(control_table)
-        .filter((F.col("city") == city) & (F.col("snapshot_date") == snapshot_date))
-        .collect()
-    ]
+    # F07.4: dataset-scoped decision from the ONE shared ingestion
+    # manifest (created/repaired from the shared canonical shape).
+    # The reused decision helpers scope rows by the dataset tag
+    # themselves, so every dataset's history stays isolated in the
+    # shared table exactly as it was in the per-dataset controls.
+    manifest_store = IngestionManifestStore(ingestion_manifest_table, spark=spark)
+    manifest_store.ensure_table()
+    existing_controls = manifest_store.read_for_slice(city, snapshot_date)
     ingestion_action = decide_ingestion_action(
         existing_controls=existing_controls,
         city=city,
@@ -303,22 +264,22 @@ def run_bronze_ingestion(
         "source_file_id to reprocess a corrected file."
     )
 
-    # Start the control record, linked to its exact source-file identity
+    # Start the manifest row, linked to its exact source-file identity
     # and - when reprocessing a corrected file - the identity it replaced.
-    run_id = build_run_id()
+    run_id = run_id or build_run_id()
     prior_source_file_id = latest_successful_source_file_id(existing_controls)
     started_at_utc = datetime.now(UTC).isoformat()
-    spark.sql(
-        build_control_insert_sql(
-            control_table,
-            city=city,
-            snapshot_date=snapshot_date,
-            run_id=run_id,
-            started_at_utc=started_at_utc,
-            source_file_id=source_record["source_file_id"],
-            prior_source_file_id=prior_source_file_id,
-            dataset=dataset,
-        )
+    manifest_store.start_run(
+        {
+            "city": city,
+            "snapshot_date": snapshot_date,
+            "run_id": run_id,
+            "dataset": dataset,
+            "source_file_id": source_record["source_file_id"],
+            "prior_source_file_id": prior_source_file_id,
+            "started_at_utc": started_at_utc,
+            "target_table": bronze_table,
+        }
     )
     print(f"Started ingestion run: {run_id}")
     if prior_source_file_id and prior_source_file_id != source_record["source_file_id"]:
@@ -350,7 +311,7 @@ def run_bronze_ingestion(
             raw_df = reader.csv(source_record["landing_path"])
         raw_row_count = raw_df.count()
     except Exception as read_error:
-        record_control_failure(spark, control_table, run_id, read_error)
+        record_control_failure(spark, ingestion_manifest_table, run_id, read_error)
         raise
     print(f"Input path: {source_record['landing_path']}")
     print(f"Raw rows read: {raw_row_count:,}")
@@ -402,17 +363,16 @@ def run_bronze_ingestion(
             .count()
         )
     except Exception as write_error:
-        record_control_failure(spark, control_table, run_id, write_error)
+        record_control_failure(spark, ingestion_manifest_table, run_id, write_error)
         raise
 
     completed_at_utc = datetime.now(UTC).isoformat()
-    spark.sql(
-        build_control_success_sql(
-            control_table,
-            run_id=run_id,
-            row_count=bronze_row_count,
-            completed_at_utc=completed_at_utc,
-        )
+    manifest_store.complete_run(
+        run_id=run_id,
+        source_row_count=raw_row_count,
+        loaded_row_count=bronze_row_count,
+        rejected_row_count=invalid_count,
+        completed_at_utc=completed_at_utc,
     )
     print(f"Target table: {bronze_table}")
     print(f"Bronze rows written for {city} / {snapshot_date}: {bronze_row_count:,}")
@@ -474,7 +434,7 @@ def run_bronze_ingestion(
         "invalid_rows": invalid_count,
         "manifest_table": manifest_table,
         "bronze_table": bronze_table,
-        "control_table": control_table,
+        "ingestion_manifest_table": ingestion_manifest_table,
         "raw_df": raw_df,
         "bronze_df": bronze_df,
         "verification_df": verification_df,

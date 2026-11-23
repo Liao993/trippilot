@@ -29,11 +29,11 @@ print("Repository root:", ROOT)
 import pytest
 
 from src.common.table_setup import (
-    LISTINGS_CONTROL_COLUMNS,
+    INGESTION_MANIFEST_COLUMNS,
     OPERATIONAL_TABLE_SHAPES,
-    PER_DATASET_CONTROL_COLUMNS,
     build_add_columns_sql,
     build_create_table_sql,
+    ensure_catalog,
     ensure_operational_table,
     ensure_operational_tables,
     ensure_schemas,
@@ -86,58 +86,69 @@ def test_build_create_table_sql_rejects_unsafe_columns():
         build_create_table_sql("a.b.c", {"city": "STRING; evil"})
 
 
-def test_listings_control_shape_matches_runtime_evolution():
-    # The 8 legacy F02 columns plus the two F05.3 identity columns.
-    assert list(LISTINGS_CONTROL_COLUMNS)[:8] == [
+def test_ingestion_manifest_shape_is_f07_4_contract():
+    # The retired F06.3 control columns, in order, plus the F07.4
+    # reconciliation counts and target_table.
+    assert list(INGESTION_MANIFEST_COLUMNS) == [
         "city",
         "snapshot_date",
         "run_id",
-        "status",
-        "row_count",
-        "started_at_utc",
-        "completed_at_utc",
-        "error_message",
-    ]
-    assert list(LISTINGS_CONTROL_COLUMNS)[8:] == [
+        "dataset",
         "source_file_id",
         "prior_source_file_id",
+        "status",
+        "source_row_count",
+        "loaded_row_count",
+        "rejected_row_count",
+        "started_at_utc",
+        "completed_at_utc",
+        "target_table",
+        "error_message",
     ]
-
-
-def test_per_dataset_shape_is_listings_plus_dataset_tag():
-    assert set(PER_DATASET_CONTROL_COLUMNS) - set(LISTINGS_CONTROL_COLUMNS) == {
-        "dataset"
-    }
-    assert set(PER_DATASET_CONTROL_COLUMNS) == set(LISTINGS_CONTROL_COLUMNS) | {
-        "dataset"
-    }
+    assert INGESTION_MANIFEST_COLUMNS["source_row_count"] == "BIGINT"
+    assert INGESTION_MANIFEST_COLUMNS["dataset"] == "STRING"
+    assert INGESTION_MANIFEST_COLUMNS["target_table"] == "STRING"
 
 
 def test_missing_columns_ignores_extra_describe_rows():
-    existing = list(LISTINGS_CONTROL_COLUMNS)[:8] + [
+    # A migrated legacy control table: all base keys present, the
+    # F07.4 reconciliation columns missing.
+    existing = [
+        "city",
+        "snapshot_date",
+        "run_id",
+        "dataset",
+        "source_file_id",
+        "prior_source_file_id",
+        "status",
+        "loaded_row_count",
+        "started_at_utc",
+        "completed_at_utc",
+        "error_message",
         "# Clustering Information",
         "# col_name",
     ]
 
-    assert missing_columns(existing, LISTINGS_CONTROL_COLUMNS) == [
-        "source_file_id",
-        "prior_source_file_id",
+    assert missing_columns(existing, INGESTION_MANIFEST_COLUMNS) == [
+        "source_row_count",
+        "rejected_row_count",
+        "target_table",
     ]
 
 
 def test_build_add_columns_sql_is_none_when_shape_complete():
     assert (
         build_add_columns_sql(
-            "a.b.c", LISTINGS_CONTROL_COLUMNS, LISTINGS_CONTROL_COLUMNS
+            "a.b.c", INGESTION_MANIFEST_COLUMNS, INGESTION_MANIFEST_COLUMNS
         )
         is None
     )
 
 
 def test_ensure_operational_table_ok_when_shape_complete():
-    spark = StubSpark(existing_columns=LISTINGS_CONTROL_COLUMNS)
+    spark = StubSpark(existing_columns=INGESTION_MANIFEST_COLUMNS)
 
-    action = ensure_operational_table(spark, "a.b.c", LISTINGS_CONTROL_COLUMNS)
+    action = ensure_operational_table(spark, "a.b.c", INGESTION_MANIFEST_COLUMNS)
 
     assert action == "ok"
     assert spark.calls[0].startswith("CREATE TABLE IF NOT EXISTS a.b.c")
@@ -145,62 +156,54 @@ def test_ensure_operational_table_ok_when_shape_complete():
 
 
 def test_ensure_operational_table_evolves_legacy_schema():
-    legacy = StubSpark(existing_columns=list(LISTINGS_CONTROL_COLUMNS)[:8])
-    table = "trippilot_dev.bronze.airbnb_listings_ingestion_control"
+    # A migrated control-history table keeps its columns and gains the
+    # F07.4 reconciliation columns additively.
+    legacy_columns = [
+        "city",
+        "snapshot_date",
+        "run_id",
+        "dataset",
+        "source_file_id",
+        "prior_source_file_id",
+        "status",
+        "loaded_row_count",
+        "started_at_utc",
+        "completed_at_utc",
+        "error_message",
+    ]
+    legacy = StubSpark(existing_columns=legacy_columns)
+    table = "trippilot_dev.ops.ingestion_manifest"
 
-    action = ensure_operational_table(legacy, table, LISTINGS_CONTROL_COLUMNS)
+    action = ensure_operational_table(legacy, table, INGESTION_MANIFEST_COLUMNS)
 
     assert action == "evolved"
     alters = [c for c in legacy.calls if c.startswith("ALTER")]
     assert len(alters) == 1
     assert alters[0] == (
         f"ALTER TABLE {table} ADD COLUMNS "
-        "(source_file_id STRING, prior_source_file_id STRING)"
+        "(source_row_count BIGINT, rejected_row_count BIGINT, target_table STRING)"
     )
 
 
 def test_ensure_operational_tables_touches_only_operational_keys():
-    spark = StubSpark(existing_columns=PER_DATASET_CONTROL_COLUMNS)
+    spark = StubSpark(existing_columns=INGESTION_MANIFEST_COLUMNS)
     tables = {
         "bronze": "x.bronze.listings",
-        "listings_control": "x.bronze.ctrl",
-        "calendar_control": "x.bronze.ccal",
-        "reviews_control": "x.bronze.crev",
-        "listings_summary_control": "x.bronze.csum",
-        "reviews_summary_control": "x.bronze.crsum",
-        "neighbourhoods_control": "x.bronze.cnbr",
-        "neighbourhood_geometry_control": "x.bronze.cgeo",
+        "ingestion_manifest": "x.ops.ingest",
         "quality_results": "x.ops.q",
         "source_manifest": "x.ops.manifest",
+        "source_availability": "x.ops.avail",
     }
 
     actions = ensure_operational_tables(spark, tables)
 
-    assert set(actions) == {
-        "listings_control",
-        "calendar_control",
-        "reviews_control",
-        "listings_summary_control",
-        "reviews_summary_control",
-        "neighbourhoods_control",
-        "neighbourhood_geometry_control",
-        "quality_results",
-    }
+    assert set(actions) == {"ingestion_manifest", "quality_results"}
     created = {
         c.split(" IF NOT EXISTS ")[1].split(" (")[0]
         for c in spark.calls
         if c.startswith("CREATE TABLE")
     }
-    assert created == {
-        "x.bronze.ctrl",
-        "x.bronze.ccal",
-        "x.bronze.crev",
-        "x.bronze.csum",
-        "x.bronze.crsum",
-        "x.bronze.cnbr",
-        "x.bronze.cgeo",
-        "x.ops.q",
-    }
+    assert created == {"x.ops.ingest", "x.ops.q"}
 
 
 def test_ensure_schemas_creates_each_unique_schema_once():
@@ -213,26 +216,23 @@ def test_ensure_schemas_creates_each_unique_schema_once():
 
 
 def test_operational_shapes_cover_expected_keys():
+    # F07.4: the ONE shared ingestion manifest replaced the seven
+    # per-dataset control tables.
     assert set(OPERATIONAL_TABLE_SHAPES) == {
-        "listings_control",
-        "calendar_control",
-        "reviews_control",
-        "listings_summary_control",
-        "reviews_summary_control",
-        "neighbourhoods_control",
-        "neighbourhood_geometry_control",
+        "ingestion_manifest",
         "quality_results",
     }
+    assert OPERATIONAL_TABLE_SHAPES["ingestion_manifest"] is INGESTION_MANIFEST_COLUMNS
 
 
-def test_summary_and_neighbourhood_controls_use_per_dataset_shape():
-    # The F07.2 datasets record their runs in the F06.3 per-dataset
-    # shape (dataset-tagged) so one dataset's rows never leak into
-    # another's decision.
-    for key in (
-        "listings_summary_control",
-        "reviews_summary_control",
-        "neighbourhoods_control",
-        "neighbourhood_geometry_control",
-    ):
-        assert OPERATIONAL_TABLE_SHAPES[key] is PER_DATASET_CONTROL_COLUMNS
+def test_ensure_catalog_creates_idempotently():
+    spark = StubSpark()
+
+    assert ensure_catalog(spark, "trippilot_test") == "trippilot_test"
+    assert spark.calls == ["CREATE CATALOG IF NOT EXISTS trippilot_test"]
+
+
+@pytest.mark.parametrize("bad", ["A.B", "tri-pilot", "a b", "", "x.y", None])
+def test_ensure_catalog_rejects_unsafe_names(bad):
+    with pytest.raises(ValueError):
+        ensure_catalog(StubSpark(), bad)

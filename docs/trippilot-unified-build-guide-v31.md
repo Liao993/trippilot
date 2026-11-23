@@ -2751,13 +2751,10 @@ sample = spark.createDataFrame(
         (101, "Toronto"),
         (102, "Vancouver"),
     ],
-    ["listing_id", "city"]
+    ["listing_id", "city"],
 )
 
-result = sample.withColumn(
-    "processed_at",
-    F.current_timestamp()
-)
+result = sample.withColumn("processed_at", F.current_timestamp())
 
 display(result)
 ```

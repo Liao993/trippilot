@@ -55,8 +55,13 @@ def test_test_mode_resolves_isolated_tables():
     tables = resolve_tables("test")
 
     for name, table in tables.items():
-        assert table.endswith("_test"), f"{name} resolved to {table}"
+        # F07.4: physical isolation - every test destination lives in
+        # the dedicated trippilot_test catalog, same table names.
+        assert table.startswith("trippilot_test."), f"{name} resolved to {table}"
         assert table != LIVE_TABLES[name]
+        assert (
+            table.replace("trippilot_test.", "trippilot_dev.", 1) == (LIVE_TABLES[name])
+        )
 
 
 def test_test_mode_never_returns_a_development_table():
@@ -71,62 +76,46 @@ def test_live_mode_resolves_development_tables():
 
 
 def test_tables_resolve_individually_per_mode():
+    # F07.4: test isolation is a separate physical catalog with the
+    # SAME table names - no _test suffixes anywhere.
     assert resolve_table("bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_listings_bronze_test"
-    )
-    assert resolve_table("listings_control", "test") == (
-        "trippilot_dev.bronze.airbnb_listings_ingestion_control_test"
+        "trippilot_test.bronze.airbnb_listings_bronze"
     )
     assert resolve_table("silver", "test") == (
-        "trippilot_dev.silver.airbnb_listings_silver_test"
+        "trippilot_test.silver.airbnb_listings_silver"
     )
     assert resolve_table("silver_rejected", "test") == (
-        "trippilot_dev.silver.airbnb_listings_rejected_test"
+        "trippilot_test.silver.airbnb_listings_rejected"
     )
     assert resolve_table("quality_results", "test") == (
-        "trippilot_dev.ops.quality_results_test"
+        "trippilot_test.ops.quality_results"
     )
     assert resolve_table("source_manifest", "test") == (
-        "trippilot_dev.ops.source_file_manifest_test"
+        "trippilot_test.ops.source_file_manifest"
     )
     assert resolve_table("source_availability", "test") == (
-        "trippilot_dev.ops.source_file_availability_test"
+        "trippilot_test.ops.source_file_availability"
     )
     assert resolve_table("calendar_bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_calendar_bronze_test"
+        "trippilot_test.bronze.airbnb_calendar_bronze"
     )
     assert resolve_table("reviews_bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_reviews_bronze_test"
-    )
-    assert resolve_table("calendar_control", "test") == (
-        "trippilot_dev.bronze.airbnb_calendar_ingestion_control_test"
-    )
-    assert resolve_table("reviews_control", "test") == (
-        "trippilot_dev.bronze.airbnb_reviews_ingestion_control_test"
+        "trippilot_test.bronze.airbnb_reviews_bronze"
     )
     assert resolve_table("listings_summary_bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_listings_summary_bronze_test"
+        "trippilot_test.bronze.airbnb_listings_summary_bronze"
     )
     assert resolve_table("reviews_summary_bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_reviews_summary_bronze_test"
+        "trippilot_test.bronze.airbnb_reviews_summary_bronze"
     )
     assert resolve_table("neighbourhoods_bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_neighbourhoods_bronze_test"
+        "trippilot_test.bronze.airbnb_neighbourhoods_bronze"
     )
     assert resolve_table("neighbourhood_geometry_bronze", "test") == (
-        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze_test"
+        "trippilot_test.bronze.airbnb_neighbourhood_geometry_bronze"
     )
-    assert resolve_table("listings_summary_control", "test") == (
-        "trippilot_dev.bronze.airbnb_listings_summary_ingestion_control_test"
-    )
-    assert resolve_table("reviews_summary_control", "test") == (
-        "trippilot_dev.bronze.airbnb_reviews_summary_ingestion_control_test"
-    )
-    assert resolve_table("neighbourhoods_control", "test") == (
-        "trippilot_dev.bronze.airbnb_neighbourhoods_ingestion_control_test"
-    )
-    assert resolve_table("neighbourhood_geometry_control", "test") == (
-        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control_test"
+    assert resolve_table("ingestion_manifest", "test") == (
+        "trippilot_test.ops.ingestion_manifest"
     )
 
     assert resolve_table("bronze", "live") == (
@@ -144,12 +133,6 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("reviews_bronze", "live") == (
         "trippilot_dev.bronze.airbnb_reviews_bronze"
     )
-    assert resolve_table("calendar_control", "live") == (
-        "trippilot_dev.bronze.airbnb_calendar_ingestion_control"
-    )
-    assert resolve_table("reviews_control", "live") == (
-        "trippilot_dev.bronze.airbnb_reviews_ingestion_control"
-    )
     assert resolve_table("listings_summary_bronze", "live") == (
         "trippilot_dev.bronze.airbnb_listings_summary_bronze"
     )
@@ -159,9 +142,26 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("neighbourhood_geometry_bronze", "live") == (
         "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze"
     )
-    assert resolve_table("neighbourhood_geometry_control", "live") == (
-        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control"
+    assert resolve_table("ingestion_manifest", "live") == (
+        "trippilot_dev.ops.ingestion_manifest"
     )
+
+    # F07.4: the per-dataset control keys are retired - the ONE shared
+    # ingestion manifest replaced them, and a retired key must not
+    # silently resolve to a destination in either mode.
+    for retired_control_key in (
+        "listings_control",
+        "calendar_control",
+        "reviews_control",
+        "listings_summary_control",
+        "reviews_summary_control",
+        "neighbourhoods_control",
+        "neighbourhood_geometry_control",
+    ):
+        with pytest.raises(ValueError):
+            resolve_table(retired_control_key, "test")
+        with pytest.raises(ValueError):
+            resolve_table(retired_control_key, "live")
 
 
 def test_unknown_logical_table_raises():
