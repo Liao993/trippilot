@@ -1,0 +1,269 @@
+{
+  "exported_at_utc": "2026-11-23T22:22:32.914557+00:00",
+  "reason": "F07.4 retirement of suffix-era _test control tables; rows deliberately not migrated to trippilot_test.ops.ingestion_manifest (would fake 'already loaded' skips against empty test bronze tables).",
+  "tables": {
+    "trippilot_dev.bronze.airbnb_listings_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "5cacee5309bd487289eab0f33ea6973b",
+        "status": "failed",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-12T19:21:59.358291+00:00",
+        "completed_at_utc": "2026-11-12T19:22:25.927619+00:00",
+        "error_message": "synthetic failure-recovery drill",
+        "source_file_id": null,
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "e3359322971f4bcca97a3f71173b0a1b",
+        "status": "failed",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-12T19:24:09.011209+00:00",
+        "completed_at_utc": "2026-11-12T19:24:20.887541+00:00",
+        "error_message": "synthetic failure-recovery drill",
+        "source_file_id": null,
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "3f0637d1b7154d308ee6a5276b7c7b75",
+        "status": "success",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-12T19:28:28.325309+00:00",
+        "completed_at_utc": "2026-11-12T19:28:40.598052+00:00",
+        "error_message": null,
+        "source_file_id": null,
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "664f26f152094d7a8dfcee57ccb1d31f",
+        "status": "success",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-14T21:33:38.235555+00:00",
+        "completed_at_utc": "2026-11-14T21:34:18.079121+00:00",
+        "error_message": null,
+        "source_file_id": null,
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "6c3d19cde905498aa8d117b0ad2a6929",
+        "status": "success",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-14T22:16:08.314579+00:00",
+        "completed_at_utc": "2026-11-14T22:16:17.880705+00:00",
+        "error_message": null,
+        "source_file_id": "26de1c3ce6216172d8faf28ddad8c789e40c1d5eb02a608ce98dea1fb08e3a68",
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2025-06-14",
+        "run_id": "90f38e369233459eade905d9d4519449",
+        "status": "success",
+        "row_count": 3,
+        "started_at_utc": "2026-11-14T22:16:58.528654+00:00",
+        "completed_at_utc": "2026-11-14T22:17:03.740625+00:00",
+        "error_message": null,
+        "source_file_id": "882ee8e090ce744629edf9bb9e9ce6c74566cd32c131a803365f582e4f21ac27",
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2025-06-14",
+        "run_id": "34404edd556e4741a80d2165f10c6541",
+        "status": "success",
+        "row_count": 4,
+        "started_at_utc": "2026-11-14T22:19:56.522764+00:00",
+        "completed_at_utc": "2026-11-14T22:20:02.964543+00:00",
+        "error_message": null,
+        "source_file_id": "cd30658fa7a6490fa1f88332bae631f0e0cd43f457294795ff63a721b632e500",
+        "prior_source_file_id": "882ee8e090ce744629edf9bb9e9ce6c74566cd32c131a803365f582e4f21ac27"
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2024-03-15",
+        "run_id": "8619cbdc7ef14a9f9ad8848a312d627d",
+        "status": "failed",
+        "row_count": 0,
+        "started_at_utc": "2026-11-14T22:21:48.671245+00:00",
+        "completed_at_utc": "2026-11-14T22:21:50.230442+00:00",
+        "error_message": "duplicate header names",
+        "source_file_id": "32e5f3ef05516a2e4d5faf08aaebe1d844a90f32f49ae750e37536d7279a7cd3",
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2024-03-22",
+        "run_id": "62718ae1e94840f7b9d703646b0b5f96",
+        "status": "failed",
+        "row_count": 0,
+        "started_at_utc": "2026-11-14T22:22:02.787893+00:00",
+        "completed_at_utc": "2026-11-14T22:22:04.589245+00:00",
+        "error_message": "required columns missing: ['price']",
+        "source_file_id": "e91930c08b426771fd13039096b4785ea2deaf0c806efdd215814b3c464884f6",
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2024-03-29",
+        "run_id": "be451484c397493ba2b33a3f21b905e9",
+        "status": "failed",
+        "row_count": 0,
+        "started_at_utc": "2026-11-14T22:22:17.104117+00:00",
+        "completed_at_utc": "2026-11-14T22:22:18.549867+00:00",
+        "error_message": "/Volumes/trippilot_dev/bronze/source_files/_test_fixtures/f05-3/insideairbnb/toronto/2024-03-29/listings__dd50661d3e26.csv.gz: gzip stream is not readable end-to-end (CRC check failed 0x66163a0 != 0x69e63a0)",
+        "source_file_id": "b8283c7bb7dacd4a9adce46290f081d68513450c3566b5023506b9dfa6d7551c",
+        "prior_source_file_id": null
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2024-03-29",
+        "run_id": "dafcc648106e448da29fbd57db1d51e0",
+        "status": "failed",
+        "row_count": 0,
+        "started_at_utc": "2026-11-14T22:22:45.967531+00:00",
+        "completed_at_utc": "2026-11-14T22:22:47.444406+00:00",
+        "error_message": "/Volumes/trippilot_dev/bronze/source_files/_test_fixtures/f05-3/insideairbnb/toronto/2024-03-29/listings__dd50661d3e26.csv.gz: gzip stream is not readable end-to-end (CRC check failed 0x66163a0 != 0x69e63a0)",
+        "source_file_id": "b8283c7bb7dacd4a9adce46290f081d68513450c3566b5023506b9dfa6d7551c",
+        "prior_source_file_id": null
+      }
+    ],
+    "trippilot_dev.bronze.airbnb_calendar_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "540bd6ab4a8048dfbe0f7ba1080a1a3d",
+        "status": "failed",
+        "row_count": 0,
+        "started_at_utc": "2026-11-18T13:23:53.314154+00:00",
+        "completed_at_utc": "2026-11-18T13:23:55.276231+00:00",
+        "error_message": "[PATH_NOT_FOUND] Path does not exist: dbfs:/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/2026-09-16/calendar__DOES_NOT_EXIST.csv.gz. SQLSTATE: 42K03 JVM stacktrace: org.apache.spark.sql.AnalysisException at org.apache.spark.sql.errors.QueryCompilationErrors$.dataPathNotExistError(QueryCompilationErrors.scala:3638) at org.apache.spark.sql.execution.datasources.DataSource$.$anonfun$checkAndGlobPathIfNecessary$1(DataSource.scala:1291) at scala.collection.immutable.List.flatMap(Lis",
+        "source_file_id": "09a7ef20b005bc7fb5ee0abdb6ba27f07a2d2e72a62885351442702ef38fefb2",
+        "prior_source_file_id": null,
+        "dataset": "calendar"
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "c4d5785325f347b39ee1d0124792ccee",
+        "status": "success",
+        "row_count": 8048251,
+        "started_at_utc": "2026-11-18T13:21:42.269341+00:00",
+        "completed_at_utc": "2026-11-18T13:22:08.910548+00:00",
+        "error_message": null,
+        "source_file_id": "09a7ef20b005bc7fb5ee0abdb6ba27f07a2d2e72a62885351442702ef38fefb2",
+        "prior_source_file_id": null,
+        "dataset": "calendar"
+      }
+    ],
+    "trippilot_dev.bronze.airbnb_reviews_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "241528e488ff43ef9130acbe800afc2d",
+        "status": "failed",
+        "row_count": 0,
+        "started_at_utc": "2026-11-18T13:23:58.860545+00:00",
+        "completed_at_utc": "2026-11-18T13:24:00.791047+00:00",
+        "error_message": "[PATH_NOT_FOUND] Path does not exist: dbfs:/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/2026-09-16/reviews__DOES_NOT_EXIST.csv.gz. SQLSTATE: 42K03 JVM stacktrace: org.apache.spark.sql.AnalysisException at org.apache.spark.sql.errors.QueryCompilationErrors$.dataPathNotExistError(QueryCompilationErrors.scala:3638) at org.apache.spark.sql.execution.datasources.DataSource$.$anonfun$checkAndGlobPathIfNecessary$1(DataSource.scala:1291) at scala.collection.immutable.List.flatMap(List",
+        "source_file_id": "7c5ada51f8e413854aa4a567d781617746b8421ced84b2f0e6e86ec79cd12be0",
+        "prior_source_file_id": null,
+        "dataset": "reviews"
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "6cabd21a9b32400d8d31a669e2e28775",
+        "status": "success",
+        "row_count": 729202,
+        "started_at_utc": "2026-11-18T13:22:38.466730+00:00",
+        "completed_at_utc": "2026-11-18T13:22:52.356753+00:00",
+        "error_message": null,
+        "source_file_id": "7c5ada51f8e413854aa4a567d781617746b8421ced84b2f0e6e86ec79cd12be0",
+        "prior_source_file_id": null,
+        "dataset": "reviews"
+      }
+    ],
+    "trippilot_dev.bronze.airbnb_listings_summary_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "079b4b57c0b34551a50b5ab6cfef8c3a",
+        "status": "success",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-23T20:23:22.074466+00:00",
+        "completed_at_utc": "2026-11-23T20:23:27.337761+00:00",
+        "error_message": null,
+        "source_file_id": "96ec34fbd40086336cace9d6d5eae9aea0dbedbfdd2d4153feee0538ec4d7032",
+        "prior_source_file_id": "96ec34fbd40086336cace9d6d5eae9aea0dbedbfdd2d4153feee0538ec4d7032",
+        "dataset": "listings_summary"
+      },
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "c5d34c90f0d048878ea3ccd26c583b29",
+        "status": "success",
+        "row_count": 22050,
+        "started_at_utc": "2026-11-23T20:21:52.853466+00:00",
+        "completed_at_utc": "2026-11-23T20:22:02.477474+00:00",
+        "error_message": null,
+        "source_file_id": "96ec34fbd40086336cace9d6d5eae9aea0dbedbfdd2d4153feee0538ec4d7032",
+        "prior_source_file_id": null,
+        "dataset": "listings_summary"
+      }
+    ],
+    "trippilot_dev.bronze.airbnb_reviews_summary_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "f9d6341b490044d1a9ad0c0aeb0b4a94",
+        "status": "success",
+        "row_count": 729202,
+        "started_at_utc": "2026-11-23T20:22:40.835588+00:00",
+        "completed_at_utc": "2026-11-23T20:22:48.132771+00:00",
+        "error_message": null,
+        "source_file_id": "330af1b904ff745c137eac8d583e91b34acb4379891d0cea757549bfde798ac9",
+        "prior_source_file_id": null,
+        "dataset": "reviews_summary"
+      }
+    ],
+    "trippilot_dev.bronze.airbnb_neighbourhoods_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "74cb366410cf4070a17fc7227a357ab8",
+        "status": "success",
+        "row_count": 140,
+        "started_at_utc": "2026-11-23T20:22:55.004441+00:00",
+        "completed_at_utc": "2026-11-23T20:23:00.517329+00:00",
+        "error_message": null,
+        "source_file_id": "614bdaeac2df8b54b1a8b3c3e800b6491c344b8f716abe62260d4abbb235bb62",
+        "prior_source_file_id": null,
+        "dataset": "neighbourhoods"
+      }
+    ],
+    "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control_test": [
+      {
+        "city": "toronto",
+        "snapshot_date": "2026-09-16",
+        "run_id": "c4a8203c4beb421886e3395a3c4a028c",
+        "status": "success",
+        "row_count": 140,
+        "started_at_utc": "2026-11-23T20:23:08.897425+00:00",
+        "completed_at_utc": "2026-11-23T20:23:14.600472+00:00",
+        "error_message": null,
+        "source_file_id": "7b7f77a66b5bb1d109a635159166b321603991486bf75729569fde8d0e167f73",
+        "prior_source_file_id": null,
+        "dataset": "neighbourhood_geometry"
+      }
+    ]
+  }
+}
