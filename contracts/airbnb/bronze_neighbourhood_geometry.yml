@@ -1,0 +1,38 @@
+bronze_neighbourhood_geometry:
+  table: trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze
+  source: insideairbnb
+  # Observed Toronto 2026-09-16 neighbourhoods.geojson (F07.1-T01
+  # evidence): FeatureCollection with 140 features - one per official
+  # neighbourhood, the same 140 names as neighbourhoods.csv - each
+  # with properties {neighbourhood, neighbourhood_group} and a
+  # MultiPolygon geometry. Grain ONE ROW PER FEATURE: the observed
+  # property keys as raw strings plus geometry_json carrying the
+  # feature's full geometry object as a compact JSON string - spatial
+  # information is never flattened away (F07.2-T02). The feature
+  # count (140) is recorded as the control row's row_count and
+  # asserted by raw==bronze reconciliation (F07.2-T03). A SEPARATE
+  # asset from the neighbourhood CSV - never combined.
+  required_columns:
+    - neighbourhood
+    - neighbourhood_group
+  source_types: string
+  write_policy: replace_city_snapshot
+  corrected_file_policy: explicit_reprocess_replace_slice
+  # Row-level quality policy (F07.2-T02/T03): a feature must carry
+  # its neighbourhood name and a geometry object. Features missing
+  # either are RETAINED with _quality_status/_quality_reason - never
+  # dropped, so the GeoJSON structural validation is auditable
+  # in-table.
+  row_validation:
+    required_fields:
+      - neighbourhood
+      - geometry_json
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256

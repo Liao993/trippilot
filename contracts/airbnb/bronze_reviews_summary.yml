@@ -1,0 +1,37 @@
+bronze_reviews_summary:
+  table: trippilot_dev.bronze.airbnb_reviews_summary_bronze
+  source: insideairbnb
+  # Observed Toronto 2026-09-16 reviews.csv summary file (F07.1-T01
+  # evidence): 2 columns, 729,202 rows - the same review events as the
+  # detailed reviews source (729,202 rows) with the review identifier,
+  # reviewer and comments dropped. Grain ONE ROW PER review event; the
+  # pair (listing_id, date) is NOT unique (1,021 same-day duplicate
+  # pairs), so uniqueness is never enforced on Bronze. A separate
+  # Bronze data product - never unioned with the detailed reviews
+  # table. All values are raw strings; dates are ISO YYYY-MM-DD as
+  # read (verified well-formed across the observed file).
+  required_columns:
+    - listing_id
+    - date
+  source_types: string
+  write_policy: replace_city_snapshot
+  corrected_file_policy: explicit_reprocess_replace_slice
+  # Row-level quality policy (F07.2-T01), mirroring the detailed
+  # reviews contract: the identity fields listing_id+date must be
+  # present and non-blank, and date must be ISO YYYY-MM-DD as read.
+  # Invalid rows are RETAINED with _quality_status/_quality_reason.
+  row_validation:
+    required_fields:
+      - listing_id
+      - date
+    date_fields:
+      - date
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256

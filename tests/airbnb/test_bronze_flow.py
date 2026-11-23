@@ -8,6 +8,8 @@ build_provenance_columns output, the string-preserving read options, and
 the dataset specs' environment-resolver keys.
 """
 
+import gzip
+import json
 import sys
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -39,6 +41,7 @@ from src.airbnb.bronze_flow import (
     build_control_success_sql,
     repo_root,
     sql_string_literal,
+    verify_and_inspect_source,
 )
 from src.common.environment import resolve_table
 from src.common.provenance import build_provenance_columns
@@ -194,6 +197,54 @@ def test_spec_defaults():
             "airbnb_reviews_bronze_test",
             "airbnb_reviews_ingestion_control_test",
         ),
+        (
+            {
+                "dataset": "listings_summary",
+                "schema_label": "summary-listings",
+                "contract_path": "contracts/airbnb/bronze_listings_summary.yml",
+                "rules_key": "bronze_listings_summary",
+                "bronze_key": "listings_summary_bronze",
+                "control_key": "listings_summary_control",
+            },
+            "airbnb_listings_summary_bronze_test",
+            "airbnb_listings_summary_ingestion_control_test",
+        ),
+        (
+            {
+                "dataset": "reviews_summary",
+                "schema_label": "summary-reviews",
+                "contract_path": "contracts/airbnb/bronze_reviews_summary.yml",
+                "rules_key": "bronze_reviews_summary",
+                "bronze_key": "reviews_summary_bronze",
+                "control_key": "reviews_summary_control",
+            },
+            "airbnb_reviews_summary_bronze_test",
+            "airbnb_reviews_summary_ingestion_control_test",
+        ),
+        (
+            {
+                "dataset": "neighbourhoods",
+                "schema_label": "neighbourhoods",
+                "contract_path": "contracts/airbnb/bronze_neighbourhoods.yml",
+                "rules_key": "bronze_neighbourhoods",
+                "bronze_key": "neighbourhoods_bronze",
+                "control_key": "neighbourhoods_control",
+            },
+            "airbnb_neighbourhoods_bronze_test",
+            "airbnb_neighbourhoods_ingestion_control_test",
+        ),
+        (
+            {
+                "dataset": "neighbourhood_geometry",
+                "schema_label": "neighbourhood-geojson",
+                "contract_path": "contracts/airbnb/bronze_neighbourhood_geometry.yml",
+                "rules_key": "bronze_neighbourhood_geometry",
+                "bronze_key": "neighbourhood_geometry_bronze",
+                "control_key": "neighbourhood_geometry_control",
+            },
+            "airbnb_neighbourhood_geometry_bronze_test",
+            "airbnb_neighbourhood_geometry_ingestion_control_test",
+        ),
     ],
 )
 def test_spec_resolver_keys_isolate_in_test_mode(
@@ -212,5 +263,87 @@ def test_spec_contract_files_exist():
     for contract_path in (
         "contracts/airbnb/bronze_calendar.yml",
         "contracts/airbnb/bronze_reviews.yml",
+        "contracts/airbnb/bronze_listings_summary.yml",
+        "contracts/airbnb/bronze_reviews_summary.yml",
+        "contracts/airbnb/bronze_neighbourhoods.yml",
+        "contracts/airbnb/bronze_neighbourhood_geometry.yml",
     ):
         assert (repo_root() / contract_path).is_file(), contract_path
+
+
+# ---------------------------------------------------------------------------
+# F07.2: landed-source verification and inspection dispatch by file type
+# ---------------------------------------------------------------------------
+
+
+def _record(path, file_type):
+    return {"landing_path": str(path), "file_type": file_type}
+
+
+def _write_gzip_csv(path, header):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt", encoding="utf-8", newline="") as file:
+        file.write(header + "\n1,alpha\n")
+    return path
+
+
+def _write_plain_csv(path, header):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(header + "\n1,alpha\n", encoding="utf-8")
+    return path
+
+
+def _write_geojson(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"neighbourhood": "A", "neighbourhood_group": ""},
+                        "geometry": {"type": "MultiPolygon", "coordinates": []},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_verify_and_inspect_source_dispatches_by_file_type(tmp_path):
+    gz = _write_gzip_csv(tmp_path / "a.csv.gz", "id,name")
+    plain = _write_plain_csv(tmp_path / "b.csv", "neighbourhood_group,neighbourhood")
+    geo = _write_geojson(tmp_path / "c.geojson")
+
+    gz_facts = verify_and_inspect_source(_record(gz, "csv.gz"), "calendar")
+    plain_facts = verify_and_inspect_source(_record(plain, "csv"), "neighbourhoods")
+    geo_facts = verify_and_inspect_source(
+        _record(geo, "geojson"), "neighbourhood-geojson"
+    )
+
+    assert gz_facts["columns"] == ["id", "name"]
+    assert plain_facts["columns"] == ["neighbourhood_group", "neighbourhood"]
+    assert geo_facts["feature_count"] == 1
+    assert geo_facts["columns"] == ["neighbourhood", "neighbourhood_group"]
+    assert geo_facts["geometry_types"] == ["MultiPolygon"]
+
+
+def test_verify_and_inspect_source_rejects_unsupported_file_types(tmp_path):
+    plain = _write_plain_csv(tmp_path / "d.csv", "id,name")
+
+    with pytest.raises(ValueError, match="Unsupported Bronze source file type"):
+        verify_and_inspect_source(_record(plain, "parquet"), "listings")
+
+
+def test_verify_and_inspect_source_rejects_corrupt_gzip(tmp_path):
+    source = _write_gzip_csv(tmp_path / "a.csv.gz", "id,name")
+    compressed = bytearray(source.read_bytes())
+    compressed[-6] ^= 0xFF
+    corrupted = tmp_path / "corrupt.csv.gz"
+    corrupted.write_bytes(bytes(compressed))
+
+    with pytest.raises(ValueError, match="not readable end-to-end"):
+        verify_and_inspect_source(_record(corrupted, "csv.gz"), "calendar")

@@ -61,6 +61,12 @@ OPERATIONAL_TABLE_SHAPES: Mapping[str, Mapping[str, str]] = {
     "listings_control": LISTINGS_CONTROL_COLUMNS,
     "calendar_control": PER_DATASET_CONTROL_COLUMNS,
     "reviews_control": PER_DATASET_CONTROL_COLUMNS,
+    # F07.2: the summary/neighbourhood Bronze datasets keep their own
+    # per-dataset ingestion-control tables (F06.3 shape).
+    "listings_summary_control": PER_DATASET_CONTROL_COLUMNS,
+    "reviews_summary_control": PER_DATASET_CONTROL_COLUMNS,
+    "neighbourhoods_control": PER_DATASET_CONTROL_COLUMNS,
+    "neighbourhood_geometry_control": PER_DATASET_CONTROL_COLUMNS,
     "quality_results": QUALITY_RESULTS_COLUMNS,
 }
 

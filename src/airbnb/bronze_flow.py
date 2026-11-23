@@ -12,9 +12,10 @@ The flow is the tested F06.2/F06.3 behavior, unchanged:
   csv.gz) is shared by the listings, calendar and reviews files, so
   resolving by identity alone is ambiguous (verified in F06.1).
 * The landed bytes are verified BEFORE Spark parses anything: hash and
-  size against the manifest, full gzip decompression, header
+  size against the manifest, full gzip decompression (csv.gz), header
   fingerprint against the registered schema_version (schema-drift
-  gate), and every contract-required column present.
+  gate) for every CSV variant, GeoJSON structure re-validation, and
+  every contract-required column present.
 * Every value stays a raw string - no casting of dates, prices or
   availability (that is Silver, F09.1).
 * Rows failing the contract's required-field/date checks are RETAINED
@@ -41,6 +42,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from src.airbnb.geojson_reader import parse_geojson_features
 from src.airbnb.ingestion import write_snapshot
 from src.airbnb.row_quality import (
     annotate_row_quality,
@@ -49,6 +51,8 @@ from src.airbnb.row_quality import (
 from src.airbnb.source_inspection import (
     check_required_columns,
     inspect_csv_gz_header,
+    inspect_csv_header,
+    inspect_geojson,
     verify_gzip_integrity,
 )
 from src.common.environment import (
@@ -87,6 +91,30 @@ READ_OPTIONS = {
     "multiLine": True,
     "escape": '"',
 }
+
+
+def verify_and_inspect_source(
+    source_record: dict,
+    schema_label: str,
+) -> dict:
+    """Verify and inspect the landed bytes for the record's file_type (F07.2).
+
+    csv.gz keeps the verified F06 behaviour exactly (full decompression
+    + header fingerprint); plain csv gets the same header fingerprint
+    through the plain-text reader; geojson is re-validated as a
+    FeatureCollection with the canonical property/geometry fingerprint.
+    Any other file type is a hard error before Spark touches anything.
+    """
+    path = source_record["landing_path"]
+    file_type = source_record["file_type"]
+    if file_type == "csv.gz":
+        verify_gzip_integrity(path)
+        return inspect_csv_gz_header(path, schema_label=schema_label)
+    if file_type == "csv":
+        return inspect_csv_header(path, schema_label=schema_label)
+    if file_type == "geojson":
+        return inspect_geojson(path, schema_label=schema_label)
+    raise ValueError(f"Unsupported Bronze source file type: {file_type!r}")
 
 
 def repo_root() -> Path:
@@ -221,10 +249,7 @@ def run_bronze_ingestion(
     source_record = store.read_landed(source_file_id)
 
     verify_landed_record(source_record)
-    verify_gzip_integrity(source_record["landing_path"])
-    inspection = inspect_csv_gz_header(
-        source_record["landing_path"], schema_label=spec.schema_label
-    )
+    inspection = verify_and_inspect_source(source_record, spec.schema_label)
     assert inspection["schema_version"] == source_record["schema_version"], (
         f"Schema drift: manifest recorded {source_record['schema_version']}, "
         f"landed header is {inspection['schema_version']}"
@@ -236,6 +261,8 @@ def run_bronze_ingestion(
     print(f"File hash:       {source_record['file_hash_sha256'][:16]}...")
     print(f"Schema version:  {source_record['schema_version']}")
     print(f"Observed columns ({len(inspection['columns'])}): {inspection['columns']}")
+    if "feature_count" in inspection:
+        print(f"Feature count:   {inspection['feature_count']:,}")
 
     # Dataset identity comes from the landed record itself (F06.1).
     city = source_record["source_entity_id"]
@@ -298,11 +325,29 @@ def run_bronze_ingestion(
         print(f"Controlled reprocess: replacing source_file_id {prior_source_file_id}")
 
     # Read the landed source file: all values stay STRINGS (F06.2-T01).
+    # GeoJSON sources are parsed to one row per feature with the full
+    # geometry preserved as a raw JSON string (F07.2-T02); the driver-side
+    # parse is bounded by the validated feature count.
     try:
-        reader = spark.read
-        for key, value in READ_OPTIONS.items():
-            reader = reader.option(key, value)
-        raw_df = reader.csv(source_record["landing_path"])
+        if source_record["file_type"] == "geojson":
+            rows = parse_geojson_features(
+                source_record["landing_path"],
+                property_keys=inspection["columns"],
+            )
+            from pyspark.sql import types as T
+
+            schema = T.StructType(
+                [
+                    T.StructField(name, T.StringType(), True)
+                    for name in [*inspection["columns"], "geometry_json"]
+                ]
+            )
+            raw_df = spark.createDataFrame(rows, schema)
+        else:
+            reader = spark.read
+            for key, value in READ_OPTIONS.items():
+                reader = reader.option(key, value)
+            raw_df = reader.csv(source_record["landing_path"])
         raw_row_count = raw_df.count()
     except Exception as read_error:
         record_control_failure(spark, control_table, run_id, read_error)

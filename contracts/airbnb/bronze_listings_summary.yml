@@ -1,0 +1,55 @@
+bronze_listings_summary:
+  table: trippilot_dev.bronze.airbnb_listings_summary_bronze
+  source: insideairbnb
+  # Observed Toronto 2026-09-16 listings.csv summary file (F07.1-T01
+  # evidence): 19 columns, 22,050 rows, grain ONE ROW PER listing with
+  # a unique id (zero duplicates). The summary file observes the same
+  # 22,050 listings as the detailed listings source but with a reduced
+  # column set: it is a SEPARATE Bronze data product, never unioned
+  # with the detailed listings table. price is blank in 5,290 rows and
+  # license in 10,222 (+ 103 'Exempt'); all values are preserved as
+  # raw strings - no coercion before Silver (F10 decides).
+  required_columns:
+    - id
+    - name
+    - host_id
+    - host_profile_id
+    - host_name
+    - neighbourhood_group
+    - neighbourhood
+    - latitude
+    - longitude
+    - room_type
+    - price
+    - minimum_nights
+    - number_of_reviews
+    - last_review
+    - reviews_per_month
+    - calculated_host_listings_count
+    - availability_365
+    - number_of_reviews_ltm
+    - license
+  source_types: string
+  write_policy: replace_city_snapshot
+  # Same corrected-file policy as the detailed datasets (F05.3):
+  # immutable raw versions; one current Bronze slice per city/snapshot;
+  # a corrected file replaces the slice only through explicit
+  # reprocess authorization.
+  corrected_file_policy: explicit_reprocess_replace_slice
+  # Row-level quality policy (F07.2-T01): the listing identifier must
+  # be present and non-blank. Blank last_review/price/reviews_per_month
+  # are legitimate source states (never-reviewed listings), so they are
+  # not enforced here; invalid rows are RETAINED with
+  # _quality_status/_quality_reason - never dropped or coerced.
+  row_validation:
+    required_fields:
+      - id
+  provenance_columns:
+    - _source
+    - _city
+    - _snapshot_date
+    - _raw_path
+    - _run_id
+    - _ingested_at_utc
+    - _source_file_id
+    - _file_hash_sha256

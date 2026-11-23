@@ -13,6 +13,7 @@ object, and a landed file is never overwritten. Failure messages are
 actionable and redact credential patterns.
 """
 
+import json
 import os
 import re
 import shutil
@@ -30,11 +31,11 @@ from src.common.source_manifest import (
     sanitize_error_message,
 )
 
-# Acquisition supports only file types whose byte signature is verified.
-# Other manifest-supported types can be added once their validation
-# behaviour is tested.
+# Acquisition supports only file types whose staged-content validation
+# is verified (F07.1 D3): csv.gz by its gzip byte signature, csv and
+# geojson by structural plain-text/JSON checks. Other manifest-supported
+# types can be added once their validation behaviour is tested.
 FILE_SIGNATURES: dict[str, bytes] = {"csv.gz": b"\x1f\x8b"}  # gzip magic
-ACQUISITION_FILE_TYPES = tuple(FILE_SIGNATURES)
 
 STAGING_DIR_NAME = "_staging"
 LANDING_FILENAME_HASH_PREFIX_LENGTH = 12
@@ -74,6 +75,75 @@ def verify_file_signature(path: str | Path, file_type: str) -> None:
             f"{path}: content does not match the {file_type} file signature "
             "(expected gzip magic bytes)"
         )
+
+
+def _verify_csv_content(path: str | Path) -> None:
+    """Reject a plain csv that is missing, empty, gzip bytes or headerless."""
+    file = Path(path)
+    if not file.exists():
+        raise ValueError(f"{file}: source file not found")
+    if not file.is_file():
+        raise ValueError(f"{file}: source is not a regular file")
+    if file.stat().st_size == 0:
+        raise ValueError(f"{file}: source file is empty")
+    with file.open("rb") as probe:
+        if probe.read(2) == FILE_SIGNATURES["csv.gz"]:
+            raise ValueError(
+                f"{file}: content is gzip-compressed but was declared csv; "
+                "declare it as csv.gz instead"
+            )
+    try:
+        with file.open("rt", encoding="utf-8", newline="") as stream:
+            line = stream.readline()
+    except UnicodeDecodeError as error:
+        raise ValueError(f"{file}: not readable as UTF-8 text ({error})") from error
+    if not line.strip():
+        raise ValueError(f"{file}: csv source contains no header line")
+
+
+def _is_geojson_feature_collection(document: Any) -> bool:
+    """Whether the parsed document is a FeatureCollection with a features array."""
+    return (
+        isinstance(document, dict)
+        and document.get("type") == "FeatureCollection"
+        and isinstance(document.get("features"), list)
+    )
+
+
+def _verify_geojson_content(path: str | Path) -> None:
+    """Reject a staged geojson that is not a JSON FeatureCollection."""
+    file = Path(path)
+    try:
+        document = json.loads(file.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError(f"{file}: not readable as JSON ({error})") from error
+    if not _is_geojson_feature_collection(document):
+        raise ValueError(
+            f"{file}: expected a GeoJSON FeatureCollection with a features array"
+        )
+
+
+# Per-file-type staged-content validation dispatch (F07.1 D3). csv.gz
+# keeps its byte-signature check; csv and geojson validate structurally.
+CONTENT_VALIDATORS: dict[str, Any] = {
+    "csv.gz": lambda path: verify_file_signature(path, "csv.gz"),
+    "csv": _verify_csv_content,
+    "geojson": _verify_geojson_content,
+}
+ACQUISITION_FILE_TYPES = tuple(CONTENT_VALIDATORS)
+
+
+def verify_file_content(path: str | Path, file_type: str) -> None:
+    """Validate staged content by its declared file type.
+
+    Raises a clear ValueError when the file type has no verified
+    validation behaviour or the staged bytes do not match it.
+    """
+    validator = CONTENT_VALIDATORS.get(file_type)
+    if validator is None:
+        listed = ", ".join(ACQUISITION_FILE_TYPES)
+        raise ValueError(f"Acquisition currently supports only: {listed}")
+    validator(path)
 
 
 def build_landing_path(
@@ -320,7 +390,7 @@ def acquire_source_file(
 
         landed: dict[str, Any] | None = None
         try:
-            verify_file_signature(source, file_type)
+            verify_file_content(source, file_type)
             final_path = build_landing_path(root, source, record)
             if final_path.exists():
                 if not final_path.is_file():

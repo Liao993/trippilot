@@ -45,6 +45,28 @@ LIVE_TABLES = {
     # can never influence another's decision.
     "calendar_control": "trippilot_dev.bronze.airbnb_calendar_ingestion_control",
     "reviews_control": "trippilot_dev.bronze.airbnb_reviews_ingestion_control",
+    # F07.2: four more separate Bronze data products - the summary
+    # listings/reviews files and the neighbourhood CSV/GeoJSON assets
+    # are never conflated with the detailed facts tables above.
+    "listings_summary_bronze": "trippilot_dev.bronze.airbnb_listings_summary_bronze",
+    "reviews_summary_bronze": "trippilot_dev.bronze.airbnb_reviews_summary_bronze",
+    "neighbourhoods_bronze": "trippilot_dev.bronze.airbnb_neighbourhoods_bronze",
+    "neighbourhood_geometry_bronze": (
+        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze"
+    ),
+    # ... and their per-dataset ingestion-control tables (F06.3 shape).
+    "listings_summary_control": (
+        "trippilot_dev.bronze.airbnb_listings_summary_ingestion_control"
+    ),
+    "reviews_summary_control": (
+        "trippilot_dev.bronze.airbnb_reviews_summary_ingestion_control"
+    ),
+    "neighbourhoods_control": (
+        "trippilot_dev.bronze.airbnb_neighbourhoods_ingestion_control"
+    ),
+    "neighbourhood_geometry_control": (
+        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control"
+    ),
 }
 
 

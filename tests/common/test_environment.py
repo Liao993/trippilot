@@ -101,6 +101,30 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("reviews_control", "test") == (
         "trippilot_dev.bronze.airbnb_reviews_ingestion_control_test"
     )
+    assert resolve_table("listings_summary_bronze", "test") == (
+        "trippilot_dev.bronze.airbnb_listings_summary_bronze_test"
+    )
+    assert resolve_table("reviews_summary_bronze", "test") == (
+        "trippilot_dev.bronze.airbnb_reviews_summary_bronze_test"
+    )
+    assert resolve_table("neighbourhoods_bronze", "test") == (
+        "trippilot_dev.bronze.airbnb_neighbourhoods_bronze_test"
+    )
+    assert resolve_table("neighbourhood_geometry_bronze", "test") == (
+        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze_test"
+    )
+    assert resolve_table("listings_summary_control", "test") == (
+        "trippilot_dev.bronze.airbnb_listings_summary_ingestion_control_test"
+    )
+    assert resolve_table("reviews_summary_control", "test") == (
+        "trippilot_dev.bronze.airbnb_reviews_summary_ingestion_control_test"
+    )
+    assert resolve_table("neighbourhoods_control", "test") == (
+        "trippilot_dev.bronze.airbnb_neighbourhoods_ingestion_control_test"
+    )
+    assert resolve_table("neighbourhood_geometry_control", "test") == (
+        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control_test"
+    )
 
     assert resolve_table("bronze", "live") == (
         "trippilot_dev.bronze.airbnb_listings_bronze"
@@ -119,6 +143,18 @@ def test_tables_resolve_individually_per_mode():
     )
     assert resolve_table("reviews_control", "live") == (
         "trippilot_dev.bronze.airbnb_reviews_ingestion_control"
+    )
+    assert resolve_table("listings_summary_bronze", "live") == (
+        "trippilot_dev.bronze.airbnb_listings_summary_bronze"
+    )
+    assert resolve_table("neighbourhoods_bronze", "live") == (
+        "trippilot_dev.bronze.airbnb_neighbourhoods_bronze"
+    )
+    assert resolve_table("neighbourhood_geometry_bronze", "live") == (
+        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze"
+    )
+    assert resolve_table("neighbourhood_geometry_control", "live") == (
+        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control"
     )
 
 

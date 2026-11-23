@@ -243,11 +243,11 @@ def test_oversized_source_file_is_rejected(tmp_path):
 
 
 def test_file_type_without_acquisition_support_is_rejected(tmp_path):
-    source = _staged(tmp_path, name="listings.csv")
-    source.write_bytes(b"id,name\n1,alpha\n")
+    source = _staged(tmp_path, name="listings.tsv")
+    source.write_bytes(b"id\tname\n1\talpha\n")
     landing_root = _source_root(tmp_path)
     metadata = _metadata(source)
-    metadata["file_type"] = "csv"
+    metadata["file_type"] = "tsv"
 
     with pytest.raises(ValueError, match="Acquisition currently supports only"):
         _acquire(source, landing_root, metadata=metadata)
@@ -260,6 +260,150 @@ def test_signature_mismatch_is_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="file signature"):
         _acquire(source, landing_root)
+
+
+# ---------------------------------------------------------------------------
+# Plain csv and geojson acquisition (F07.1 D3)
+# ---------------------------------------------------------------------------
+
+GEOJSON_TEXT = (
+    '{"type": "FeatureCollection", "features": ['
+    '{"type": "Feature", "properties": {"neighbourhood": "Agincourt", '
+    '"neighbourhood_group": ""}, "geometry": {"type": "MultiPolygon", '
+    '"coordinates": [[[[0.0, 0.0]]]]}}'
+    "]}"
+)
+
+
+def _staged_text(tmp_path, name, text):
+    path = _source_root(tmp_path) / "_staging" / "insideairbnb" / "toronto" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_plain_csv_lands_with_hash_versioned_name(tmp_path):
+    source = _staged_text(
+        tmp_path,
+        "neighbourhoods.csv",
+        "neighbourhood_group,neighbourhood\n,Agincourt\n",
+    )
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "csv"
+
+    record = _acquire(source, landing_root, metadata=metadata)
+
+    expected = (
+        landing_root
+        / "insideairbnb"
+        / "toronto"
+        / "2026-09-16"
+        / f"neighbourhoods__{record['file_hash_sha256'][:12]}.csv"
+    )
+    assert record["landing_path"] == str(expected)
+    assert record["processing_state"] == "landed"
+    assert (
+        Path(record["landing_path"])
+        .read_text(encoding="utf-8")
+        .startswith("neighbourhood_group")
+    )
+
+
+def test_plain_csv_retry_is_idempotent(tmp_path):
+    source = _staged_text(tmp_path, "listings.csv", "id,name\n1,alpha\n")
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "csv"
+
+    first = _acquire(source, landing_root, metadata=metadata)
+    second = _acquire(source, landing_root, metadata=metadata)
+
+    assert second["source_file_id"] == first["source_file_id"]
+    assert second["landing_path"] == first["landing_path"]
+    assert second["processing_state"] == "landed"
+    assert len(list(Path(first["landing_path"]).parent.iterdir())) == 1
+
+
+def test_gzip_bytes_declared_as_csv_are_rejected(tmp_path):
+    # A gzip fixture under a .csv name: the plain-csv validator must
+    # catch the mislabeled compression instead of landing it.
+    source = _staged(tmp_path, name="listings.csv")
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "csv"
+
+    with pytest.raises(ValueError, match="gzip-compressed"):
+        _acquire(source, landing_root, metadata=metadata)
+
+
+def test_headerless_plain_csv_is_rejected(tmp_path):
+    source = _staged_text(tmp_path, "listings.csv", "\n1,alpha\n")
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "csv"
+
+    with pytest.raises(ValueError, match="no header line"):
+        _acquire(source, landing_root, metadata=metadata)
+
+
+def test_geojson_lands_and_retries_idempotently(tmp_path):
+    source = _staged_text(tmp_path, "neighbourhoods.geojson", GEOJSON_TEXT)
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "geojson"
+
+    first = _acquire(source, landing_root, metadata=metadata)
+    second = _acquire(source, landing_root, metadata=metadata)
+
+    expected = (
+        landing_root
+        / "insideairbnb"
+        / "toronto"
+        / "2026-09-16"
+        / f"neighbourhoods__{first['file_hash_sha256'][:12]}.geojson"
+    )
+    assert first["landing_path"] == str(expected)
+    assert second["source_file_id"] == first["source_file_id"]
+    assert second["landing_path"] == first["landing_path"]
+    assert second["processing_state"] == "landed"
+    assert len(list(Path(first["landing_path"]).parent.iterdir())) == 1
+
+
+def test_invalid_json_geojson_is_rejected(tmp_path):
+    source = _staged_text(tmp_path, "neighbourhoods.geojson", "{not json")
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "geojson"
+
+    with pytest.raises(ValueError, match="not readable as JSON"):
+        _acquire(source, landing_root, metadata=metadata)
+
+
+def test_non_feature_collection_geojson_is_rejected(tmp_path):
+    source = _staged_text(
+        tmp_path, "neighbourhoods.geojson", '{"type": "Polygon", "coordinates": []}'
+    )
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "geojson"
+
+    with pytest.raises(ValueError, match="FeatureCollection"):
+        _acquire(source, landing_root, metadata=metadata)
+
+
+def test_features_not_a_list_is_rejected(tmp_path):
+    source = _staged_text(
+        tmp_path,
+        "neighbourhoods.geojson",
+        '{"type": "FeatureCollection", "features": {}}',
+    )
+    landing_root = _source_root(tmp_path)
+    metadata = _metadata(source)
+    metadata["file_type"] = "geojson"
+
+    with pytest.raises(ValueError, match="features"):
+        _acquire(source, landing_root, metadata=metadata)
 
 
 def test_source_outside_approved_roots_is_rejected(tmp_path):
