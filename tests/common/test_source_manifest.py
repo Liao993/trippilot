@@ -32,6 +32,7 @@ print("Repository root:", ROOT)
 import pytest
 
 from src.common.source_manifest import (
+    ALLOWED_ERROR_TYPES,
     ALLOWED_PROCESSING_STATES,
     REQUIRED_RECORD_FIELDS,
     SUPPORTED_FILE_TYPES,
@@ -98,11 +99,13 @@ def test_manifest_record_contains_exactly_the_contract_fields(tmp_path):
 
     record = build_manifest_record(_valid_metadata(), path)
 
-    # Optional fields (landing_path, error_message) are deliberately not
-    # set on a fresh registered record; they appear only on transition.
+    # Optional fields (landing_path, error_message, error_type) are
+    # deliberately not set on a fresh registered record; they appear
+    # only on transition.
     assert set(record) == set(REQUIRED_RECORD_FIELDS)
     assert "landing_path" not in record
     assert "error_message" not in record
+    assert "error_type" not in record
 
 
 def test_run_id_defaults_to_the_provenance_helper(tmp_path):
@@ -301,6 +304,56 @@ def test_error_message_is_only_allowed_in_failed_state():
     assert any("error_message is only allowed" in e for e in errors)
 
 
+def test_error_type_is_only_allowed_in_failed_state():
+    record = _built_record()
+    record["error_type"] = "acquisition"
+
+    errors = validate_source_metadata(record)
+
+    assert any("error_type is only allowed" in e for e in errors)
+
+
+def test_error_type_must_use_the_controlled_vocabulary():
+    record = _built_record()
+    record["error_type"] = "not_a_real_class"
+
+    errors = validate_source_metadata(record)
+
+    assert any("Invalid error_type" in e for e in errors)
+    assert ALLOWED_ERROR_TYPES == ("acquisition", "parse_or_schema")
+
+
+def test_failed_transition_records_the_error_type():
+    record = _built_record()
+
+    failed = apply_state_transition(
+        record, "failed", error_message="bad gzip", error_type="parse_or_schema"
+    )
+
+    assert failed["error_type"] == "parse_or_schema"
+    assert failed["error_message"] == "bad gzip"
+
+
+def test_failed_transition_rejects_unknown_error_type():
+    record = _built_record()
+
+    with pytest.raises(ValueError, match="Invalid error_type"):
+        apply_state_transition(
+            record, "failed", error_message="bad gzip", error_type="timeout"
+        )
+
+
+def test_non_failed_transition_clears_the_error_type():
+    record = _built_record()
+    record["error_type"] = "acquisition"
+    record["error_message"] = "stale"
+
+    validated = apply_state_transition(record, "validated")
+
+    assert "error_type" not in validated
+    assert "error_message" not in validated
+
+
 def test_landing_path_must_be_a_volume_path():
     record = _built_record()
     record["landing_path"] = "/tmp/not-a-volume.csv.gz"
@@ -331,11 +384,12 @@ def test_yaml_contract_matches_the_module_rules():
         contract = yaml.safe_load(file)
 
     assert contract["states"] == list(ALLOWED_PROCESSING_STATES)
+    assert contract["error_types"] == list(ALLOWED_ERROR_TYPES)
     assert contract["supported_file_types"] == list(SUPPORTED_FILE_TYPES)
     assert contract["valid_transitions"] == {
         state: list(targets) for state, targets in VALID_TRANSITIONS.items()
     }
     for field in REQUIRED_RECORD_FIELDS:
         assert contract["fields"][field]["required"] is True
-    for optional in ["landing_path", "error_message"]:
+    for optional in ["landing_path", "error_message", "error_type"]:
         assert contract["fields"][optional]["required"] is False

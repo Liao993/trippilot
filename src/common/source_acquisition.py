@@ -42,6 +42,15 @@ LANDING_FILENAME_HASH_PREFIX_LENGTH = 12
 SAFE_SEGMENT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
+class _ParseOrSchemaError(ValueError):
+    """Internal marker: a staged-content validation failure.
+
+    Raised only inside acquire_source_file to classify the failed
+    manifest record as parse_or_schema (F07.3-T01); it always wraps the
+    original ValueError and re-raises as a plain ValueError to callers.
+    """
+
+
 def _validate_path_segment(value: Any, field: str) -> str:
     text = str(value)
     if not SAFE_SEGMENT_PATTERN.match(text):
@@ -390,7 +399,14 @@ def acquire_source_file(
 
         landed: dict[str, Any] | None = None
         try:
-            verify_file_content(source, file_type)
+            try:
+                verify_file_content(source, file_type)
+            except ValueError as exc:
+                # F07.3-T01: staged-content validation failures (byte
+                # signature, csv header/UTF-8, GeoJSON FeatureCollection
+                # structure) are classified parse_or_schema; the staged
+                # bytes were obtained but could not be interpreted.
+                raise _ParseOrSchemaError(str(exc)) from exc
             final_path = build_landing_path(root, source, record)
             if final_path.exists():
                 if not final_path.is_file():
@@ -432,11 +448,20 @@ def acquire_source_file(
                 landed = _land(record, final_path, landing_path_prefixes)
         except (ValueError, OSError) as exc:
             # Record the visible failure (registered -> failed) with the
-            # sanitized reason, then re-raise: the attempt stays
-            # auditable and a controlled retry can re-run it.
+            # sanitized reason and its F07.3-T01 classification - a
+            # staged-content problem is parse_or_schema, everything else
+            # on the acquisition path is acquisition - then re-raise: the
+            # attempt stays auditable and a controlled retry can re-run it.
             if manifest_store is not None:
+                error_type = (
+                    "parse_or_schema"
+                    if isinstance(exc, _ParseOrSchemaError)
+                    else "acquisition"
+                )
                 manifest_store.upsert(
-                    apply_state_transition(record, "failed", error_message=str(exc))
+                    apply_state_transition(
+                        record, "failed", error_message=str(exc), error_type=error_type
+                    )
                 )
             raise
 

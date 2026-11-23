@@ -13,6 +13,16 @@ states:
   - landed
   - failed
 
+# F07.3-T01: controlled failure classification, recorded on failed
+# records alongside error_message. acquisition covers staging/landing
+# side problems; parse_or_schema covers staged-content validation
+# failures. Optional on failed records (pre-F07.3 history has none).
+# Bronze-level validation failures are recorded separately in the
+# per-dataset ingestion-control tables, not here.
+error_types:
+  - acquisition
+  - parse_or_schema
+
 # Allowed state transitions. The success path is
 # registered -> validated -> landed. failed is terminal: a retry of the
 # same bytes is idempotent (same source_file_id) and a corrected file
@@ -110,3 +120,11 @@ fields:
     description: >-
       Sanitized failure explanation, required when the state is failed;
       credentials are redacted and never appear in the message.
+  error_type:
+    type: string
+    required: false
+    description: >-
+      Controlled failure classification from the error_types list above,
+      only allowed when the state is failed. Distinguishes a staging or
+      landing-side acquisition failure from a staged-content parse or
+      schema failure (F07.3-T01).
