@@ -209,9 +209,11 @@ def test_ensure_operational_tables_touches_only_operational_keys():
 def test_ensure_schemas_creates_each_unique_schema_once():
     spark = StubSpark()
 
-    made = ensure_schemas(spark, ["t.bronze.a", "t.bronze.b", "t.ops.c", "t.silver.d"])
+    made = ensure_schemas(
+        spark, ["t.bronze.a", "t.bronze.b", "t.ops.c", "t.reporting.d"]
+    )
 
-    assert made == ["t.bronze", "t.ops", "t.silver"]
+    assert made == ["t.bronze", "t.ops", "t.reporting"]
     assert spark.calls == [f"CREATE SCHEMA IF NOT EXISTS {s}" for s in made]
 
 

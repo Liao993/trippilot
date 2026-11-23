@@ -81,12 +81,6 @@ def test_tables_resolve_individually_per_mode():
     assert resolve_table("bronze", "test") == (
         "trippilot_test.bronze.airbnb_listings_bronze"
     )
-    assert resolve_table("silver", "test") == (
-        "trippilot_test.silver.airbnb_listings_silver"
-    )
-    assert resolve_table("silver_rejected", "test") == (
-        "trippilot_test.silver.airbnb_listings_rejected"
-    )
     assert resolve_table("quality_results", "test") == (
         "trippilot_test.ops.quality_results"
     )
@@ -183,7 +177,7 @@ def test_live_table_keys_use_configured_schemas():
     for table in LIVE_TABLES.values():
         catalog, schema, _table = table.split(".")
         assert catalog == "trippilot_dev"
-        assert schema in {"bronze", "silver", "ops"}
+        assert schema in {"bronze", "ops"}
 
 
 def test_force_reload_accepts_bools_and_widget_strings():

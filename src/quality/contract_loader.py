@@ -26,7 +26,7 @@ def get_table_rules(
     contract: dict[str, Any],
     table_name: str,
 ) -> dict[str, Any]:
-    """Return the rules for one table, such as silver_listings."""
+    """Return the rules for one table, such as bronze_listings."""
     rules = contract.get(table_name)
 
     if not isinstance(rules, dict):

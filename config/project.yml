@@ -6,7 +6,6 @@ databricks:
   catalog: trippilot_dev
   schemas:
     bronze: bronze
-    silver: silver
     gold: gold
   volumes:
     source_files: /Volumes/trippilot_dev/bronze/source_files

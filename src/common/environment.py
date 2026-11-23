@@ -37,8 +37,6 @@ TEST_CATALOG = "trippilot_test"
 # every entry into the TEST_CATALOG with the same schema/table names.
 LIVE_TABLES = {
     "bronze": "trippilot_dev.bronze.airbnb_listings_bronze",
-    "silver": "trippilot_dev.silver.airbnb_listings_silver",
-    "silver_rejected": "trippilot_dev.silver.airbnb_listings_rejected",
     "quality_results": "trippilot_dev.ops.quality_results",
     # The former "exclusion" key was removed in the pre-F07 cleanup: it
     # pointed at a placeholder table (ops.exclusion) that was never
@@ -104,7 +102,7 @@ def resolve_table(logical_name: str, run_mode: str) -> str:
     Resolve one logical table name to a fully qualified table name.
 
     Args:
-        logical_name: Key in LIVE_TABLES, such as "bronze" or "silver".
+        logical_name: Key in LIVE_TABLES, such as "bronze" or "quality_results".
         run_mode: "test" or "live".
 
     Returns:
