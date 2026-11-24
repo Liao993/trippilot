@@ -120,7 +120,7 @@ def resolve_table(logical_name: str, run_mode: str) -> str:
     live_name = LIVE_TABLES[logical_name]
 
     if mode == "test":
-        catalog, schema, table = live_name.split(".")
+        _catalog, schema, table = live_name.split(".")
         return f"{TEST_CATALOG}.{schema}.{table}"
 
     return live_name
