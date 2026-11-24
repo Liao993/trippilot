@@ -1,3 +1,21 @@
+# Stable city registry (F08.1).
+#
+# One entry per registered city. city_id is the immutable canonical
+# identifier (lowercase slug form) used as source_entity_id by the
+# source-file manifest, the availability ledger and Bronze
+# provenance (_city); it never changes once assigned. Only the
+# enabled flag may be toggled, and city-level enablement lives ONLY
+# here - config/project.yml carries dataset/provider configuration
+# per registered city, never enablement.
+version: 1
 cities:
-  - city: toronto
+  - city_id: toronto
+    slug: toronto
+    display_name: Toronto
+    country_code: CA
+    region: Ontario
+    timezone: America/Toronto
+    currency: CAD
+    latitude: 43.6532
+    longitude: -79.3832
     enabled: true

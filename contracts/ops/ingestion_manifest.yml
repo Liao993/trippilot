@@ -5,6 +5,13 @@
 # source file per ingestion run. It replaced the seven per-dataset
 # ingestion-control tables (their history was migrated first).
 #
+# F08.3 state model: a load that has not started leaves NO row -
+# coverage reporting derives the `pending` state from the absence of
+# a row; `pending` is never a stored status. Stored statuses stay
+# running / success / failed, separate from the source availability
+# states (not_published, available, invalid) in
+# ops.source_file_availability.
+#
 # This file is the human-facing documentation of the module rules in
 # src/common/ingestion_manifest.py; unit tests cross-check the two so
 # they cannot drift.
@@ -78,9 +85,10 @@ fields:
     required: true
     type: string
     description: >-
-      Load lifecycle (see statuses). Source availability states such
-      as not_published are recorded in ops.source_file_availability
-      (F07.3), never here: a load that never started leaves no row.
+      Load lifecycle (see statuses). `pending` is DERIVED (F08.3):
+      a load that never started leaves no row. Source availability
+      states such as not_published or invalid are recorded in
+      ops.source_file_availability, never here.
   source_row_count:
     required: false
     type: bigint

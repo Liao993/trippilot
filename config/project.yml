@@ -7,47 +7,61 @@ databricks:
   schemas:
     bronze: bronze
     # Reserved and empty: the legacy Silver stage was fully retired in
-    # the F07.4 cleanup; F08 rebuilds the stage from scratch here.
+    # the F07.4 cleanup; F09 rebuilds the stage from scratch here.
     silver: silver
     gold: gold
   volumes:
     source_files: /Volumes/trippilot_dev/bronze/source_files
 
 sources:
-  # Dataset-level source registry. Each dataset's exact landed object is
-  # resolved from the source manifest (ops.source_file_manifest) by
-  # identity, never from a path here: snapshot dates and file identities
-  # are per-file registration state, not project configuration. The
-  # required_identifier values mirror the Bronze contracts' key fields.
+  # City/dataset source registry (F08.2). City keys are immutable
+  # city_ids registered in config/city_registry.yml, which is also
+  # the ONLY place city enablement lives - an 'enabled' flag here is
+  # a configuration error. Dataset keys are the controlled ingestion
+  # tags from src/common/ingestion_manifest.py. Each dataset's exact
+  # landed object is resolved from the source manifest
+  # (ops.source_file_manifest) by identity + dataset tag, never from a
+  # path here: snapshot dates and file identities are per-file
+  # registration state, not project configuration. The
+  # required_identifier values mirror the Bronze contracts' key
+  # fields.
   airbnb:
     provider: insideairbnb
-    file_format: csv_gzip
+    source_url: https://insideairbnb.com/get-the-data/
     cities:
       toronto:
-        enabled: true
         datasets:
           listings:
             file: listings.csv.gz
+            file_type: csv.gz
             required_identifier: id
           calendar:
             file: calendar.csv.gz
+            file_type: csv.gz
             required_identifier: listing_id
           reviews:
             file: reviews.csv.gz
+            file_type: csv.gz
             required_identifier: id
           # F07.1/F07.2: the summary and neighbourhood reference files
           # are registered per-file in the source manifest (distinct
           # file_type + content hash); these entries record their
-          # dataset identity and key fields only.
-          summary_listings:
+          # dataset identity and key fields only. Keys are the
+          # controlled ingestion tags (listings_summary /
+          # reviews_summary), not free-form labels.
+          listings_summary:
             file: listings.csv
+            file_type: csv
             required_identifier: id
-          summary_reviews:
+          reviews_summary:
             file: reviews.csv
+            file_type: csv
             required_identifier: listing_id
           neighbourhoods:
             file: neighbourhoods.csv
+            file_type: csv
             required_identifier: neighbourhood
           neighbourhood_geometry:
             file: neighbourhoods.geojson
+            file_type: geojson
             required_identifier: neighbourhood

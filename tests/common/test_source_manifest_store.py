@@ -78,8 +78,10 @@ def test_create_table_sql_matches_the_contract():
     assert "byte_size BIGINT NOT NULL" in sql
     assert "source_file_id STRING NOT NULL" in sql
     assert "landing_path STRING" in sql
+    assert "dataset STRING" in sql
     assert "error_message STRING" in sql
     assert "error_type STRING" in sql
+    assert "dataset STRING NOT NULL" not in sql
     assert "landing_path STRING NOT NULL" not in sql
     assert "error_message STRING NOT NULL" not in sql
     assert "error_type STRING NOT NULL" not in sql
@@ -113,6 +115,7 @@ def test_upsert_merges_on_source_file_id_with_operational_updates_only():
         "source_entity_id",
         "source_version",
         "file_type",
+        "dataset",
         "source_url",
         "retrieved_at_utc",
         "file_hash_sha256",
@@ -144,6 +147,7 @@ def test_upsert_escapes_single_quotes_in_literals():
 def test_upsert_renders_null_for_absent_optional_fields():
     sql = build_upsert_sql(TEST_TABLE, _record())
 
+    assert "NULL AS dataset" in sql
     assert "NULL AS landing_path" in sql
     assert "NULL AS error_message" in sql
     assert "NULL AS error_type" in sql
@@ -201,9 +205,12 @@ def test_store_ensure_table_executes_create_sql():
     assert not any(sql.startswith("ALTER") for sql in spark.sql_log)
 
 
-def test_store_ensure_table_evolves_a_legacy_shape_by_adding_error_type():
-    # A pre-F07.3 table lacks only error_type (F07.3-T01).
-    legacy_columns = [field for field in MANIFEST_FIELDS if field != "error_type"]
+def test_store_ensure_table_evolves_a_legacy_shape_by_adding_missing_columns():
+    # A pre-F07.3/pre-F08.4 table lacks the dataset (F08.4) and
+    # error_type (F07.3-T01) columns.
+    legacy_columns = [
+        field for field in MANIFEST_FIELDS if field not in ("dataset", "error_type")
+    ]
     spark = StubSpark(rows=[{"col_name": field} for field in legacy_columns])
     store = ManifestStore(table_name=TEST_TABLE, spark=spark)
 
@@ -212,8 +219,9 @@ def test_store_ensure_table_evolves_a_legacy_shape_by_adding_error_type():
     alter_statements = [sql for sql in spark.sql_log if sql.startswith("ALTER")]
     assert len(alter_statements) == 1
     assert "ADD COLUMNS" in alter_statements[0]
+    assert "dataset STRING" in alter_statements[0]
     assert "error_type STRING" in alter_statements[0]
-    # Only the missing column is added; existing columns are untouched.
+    # Only the missing columns are added; existing columns are untouched.
     assert "error_message" not in alter_statements[0]
     assert "landing_path" not in alter_statements[0]
 
@@ -366,3 +374,69 @@ def test_read_landed_by_identity_requires_a_landing_path():
 
     with pytest.raises(ValueError, match="no landing_path"):
         store.read_landed_by_identity("insideairbnb", "toronto", "2026-09-16", "csv.gz")
+
+
+def test_read_landed_by_dataset_returns_the_single_landed_row():
+    validated = apply_state_transition(_record(dataset="listings"), "validated")
+    landed = apply_state_transition(
+        validated,
+        "landed",
+        landing_path="/Volumes/dev/bronze/insideairbnb/listings__abc.csv.gz",
+    )
+    spark = StubSpark(rows=[landed])
+    store = ManifestStore(table_name=TEST_TABLE, spark=spark)
+
+    record = store.read_landed_by_dataset("toronto", "listings")
+
+    assert record["source_file_id"] == "a" * 64
+    assert record["dataset"] == "listings"
+    assert "source_entity_id = 'toronto'" in spark.sql_log[-1]
+    assert "dataset = 'listings'" in spark.sql_log[-1]
+    assert "processing_state = 'landed'" in spark.sql_log[-1]
+
+
+def test_read_landed_by_dataset_filters_by_source_version_when_given():
+    validated = apply_state_transition(_record(dataset="listings"), "validated")
+    landed = apply_state_transition(
+        validated, "landed", landing_path="/Volumes/dev/bronze/insideairbnb/a.csv.gz"
+    )
+    spark = StubSpark(rows=[landed])
+    store = ManifestStore(table_name=TEST_TABLE, spark=spark)
+
+    store.read_landed_by_dataset("toronto", "listings", "2026-09-16")
+
+    assert "source_version = '2026-09-16'" in spark.sql_log[-1]
+
+
+def test_read_landed_by_dataset_raises_for_ambiguous_versions():
+    validated = apply_state_transition(_record(dataset="listings"), "validated")
+    first = apply_state_transition(
+        validated, "landed", landing_path="/Volumes/dev/bronze/insideairbnb/a.csv.gz"
+    )
+    other = apply_state_transition(
+        _record(dataset="listings", source_version="2026-10-14"), "validated"
+    )
+    second = apply_state_transition(
+        other, "landed", landing_path="/Volumes/dev/bronze/insideairbnb/b.csv.gz"
+    )
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[first, second]))
+
+    with pytest.raises(ValueError, match="2 landed manifest records found"):
+        store.read_landed_by_dataset("toronto", "listings")
+
+
+def test_read_landed_by_dataset_raises_when_no_landed_record_exists():
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[]))
+
+    with pytest.raises(ValueError, match="no landed manifest record"):
+        store.read_landed_by_dataset("toronto", "listings")
+
+
+def test_read_landed_by_dataset_requires_city_and_dataset():
+    store = ManifestStore(table_name=TEST_TABLE, spark=StubSpark(rows=[]))
+
+    with pytest.raises(ValueError, match="dataset is required"):
+        store.read_landed_by_dataset("toronto", " ")
+
+    with pytest.raises(ValueError, match="source_entity_id is required"):
+        store.read_landed_by_dataset(" ", "listings")

@@ -13,12 +13,9 @@ states:
   - landed
   - failed
 
-# F07.3-T01: controlled failure classification, recorded on failed
-# records alongside error_message. acquisition covers staging/landing
-# side problems; parse_or_schema covers staged-content validation
-# failures. Optional on failed records (pre-F07.3 history has none).
-# Bronze-level validation failures are recorded separately in the
-# per-dataset ingestion-control tables, not here.
+# parse_or_schema failures. Optional on failed records (pre-F07.3 history has none).
+# Bronze-level load failures are recorded separately in the unified
+# ops.ingestion_manifest (F07.4), not here.
 error_types:
   - acquisition
   - parse_or_schema
@@ -70,6 +67,17 @@ fields:
     type: string
     required: true
     description: Canonical format label from supported_file_types.
+  dataset:
+    type: string
+    required: false
+    description: >-
+      Controlled dataset tag (F08.4) from
+      src/common/ingestion_manifest.py INGESTION_DATASETS, linking the
+      file to its ingestion dataset so city/dataset slices resolve
+      unambiguously even where datasets share a file type (listings,
+      calendar and reviews are all csv.gz). Records acquired after F08.4
+      carry it; pre-F08.4 history is corrected in place through a
+      documented data correction.
   source_url:
     type: string
     required: true

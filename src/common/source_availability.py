@@ -1,4 +1,4 @@
-"""Source-asset availability ledger (F07.3-T01).
+"""Source-asset availability ledger (F07.3-T01, extended in F08.3).
 
 The source manifest records one immutable row per ACQUIRED file: its
 deterministic source_file_id and NOT NULL content fields require real
@@ -17,13 +17,27 @@ in the manifest (no duplication):
 - available: supersedes a prior not_published claim once bytes have
   landed. Recording it REQUIRES the landed source_file_id, which is
   verified against the manifest store and must match the identity.
+- invalid (F08.3): a discovered asset that failed required validation.
+  Recording it REQUIRES the evidence URL and a note describing the
+  failed check; the attempt's own history (hash, error, classification)
+  stays in the source manifest, so no landed ID is carried here.
+  Unlike not_published, bytes MAY exist - the ledger records only the
+  conclusion that the asset failed validation.
+
+unknown and disabled are DERIVED coverage states (F08.3), never stored
+rows: a configured city/dataset with no ledger row is `unknown`, and a
+registry-disabled city is `disabled`. Coverage reporting derives both
+at read time so the ledger holds evidence-backed conclusions only.
 
 One row per expected asset identity (source_family, source_entity_id,
-source_version, file_type), keyed by a deterministic availability_id
-computed over the identity WITHOUT any content hash, so it can never
-collide with manifest record IDs. Upserts are idempotent MERGEs on
-availability_id that update only the availability/evidence fields;
-the identity is the key and is never rewritten.
+source_version, file_type, dataset - F08.3 adds the dataset dimension
+so assets sharing a file type like csv.gz across
+listings/calendar/reviews stay distinct), keyed by a deterministic
+availability_id computed over the identity WITHOUT any content hash,
+so it can never collide with manifest record IDs. Upserts are
+idempotent MERGEs on availability_id that update only the
+availability/evidence fields; the identity is the key and is never
+rewritten.
 
 Pure Python validation + SQL builders (ManifestStore pattern): no
 Spark needed for unit tests, injected Spark for table operations.
@@ -47,7 +61,10 @@ from src.common.table_setup import build_add_columns_sql
 # Declared by contracts/ops/source_file_availability.yml.
 AVAILABILITY_TABLE = "trippilot_dev.ops.source_file_availability"
 
-ALLOWED_AVAILABILITY_STATES = ("not_published", "available")
+# Stored states only (F08.3). unknown and disabled are derived at read
+# time for coverage reporting (see the module docstring); the ledger
+# holds evidence-backed conclusions exclusively.
+ALLOWED_AVAILABILITY_STATES = ("not_published", "available", "invalid")
 
 # Identity first, then the availability/evidence fields. The MERGE
 # updates only the fields after availability_id; the identity is
@@ -58,6 +75,7 @@ AVAILABILITY_FIELDS: tuple[str, ...] = (
     "source_entity_id",
     "source_version",
     "file_type",
+    "dataset",
     "availability_state",
     "evidence_url",
     "evidence_note",
@@ -77,7 +95,15 @@ REQUIRED_FIELDS = tuple(
     field for field in AVAILABILITY_FIELDS if field not in NULLABLE_FIELDS
 )
 
-IDENTITY_FIELDS = ("source_family", "source_entity_id", "source_version", "file_type")
+# F08.3: the dataset tag completes the identity so two assets sharing
+# a file type (listings/calendar/reviews are all csv.gz) stay distinct.
+IDENTITY_FIELDS = (
+    "source_family",
+    "source_entity_id",
+    "source_version",
+    "file_type",
+    "dataset",
+)
 
 # Fields the MERGE may update on a match. The identity is carried by
 # the deterministic key and is never rewritten; only the current
@@ -126,16 +152,18 @@ def build_availability_id(
     source_entity_id: str,
     source_version: str,
     file_type: str,
+    dataset: str,
 ) -> str:
     """Return the deterministic ledger ID for one expected asset identity.
 
-    Computed over the identity WITHOUT any content hash: an expected
-    asset keeps one ledger row across checks, and the ID can never
-    equal a manifest source_file_id (whose canonical string includes
-    the file hash).
+    Computed over the identity (family, entity, version, file type and
+    dataset - F08.3) WITHOUT any content hash: an expected asset keeps
+    one ledger row across checks, and the ID can never equal a manifest
+    source_file_id (whose canonical string includes the file hash).
     """
     canonical = (
-        f"{source_family}|{source_entity_id}|{source_version}|{file_type}|availability"
+        f"{source_family}|{source_entity_id}|{source_version}|"
+        f"{file_type}|{dataset}|availability"
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -205,6 +233,19 @@ def validate_availability_record(record: Any) -> list[str]:
                 "not_published; an unacquired asset has no landed record"
             )
 
+    if state == "invalid":
+        if not _is_nonempty_string(evidence_url):
+            errors.append("evidence_url is required when availability_state is invalid")
+        if not _is_nonempty_string(record.get("evidence_note")):
+            errors.append(
+                "evidence_note is required when availability_state is invalid"
+            )
+        if _is_nonempty_string(landed_id):
+            errors.append(
+                "landed_source_file_id is not allowed when availability_state is "
+                "invalid; the failed attempt's history stays in the source manifest"
+            )
+
     if state == "available" and not _is_nonempty_string(landed_id):
         errors.append(
             "landed_source_file_id is required when availability_state is available"
@@ -224,6 +265,7 @@ def validate_availability_record(record: Any) -> list[str]:
             str(record["source_entity_id"]),
             str(record["source_version"]),
             str(record["file_type"]),
+            str(record["dataset"]),
         )
         if (
             _is_nonempty_string(record.get("availability_id"))
@@ -251,6 +293,7 @@ def _build_base_record(
         "source_entity_id": source_identity.get("source_entity_id"),
         "source_version": source_identity.get("source_version"),
         "file_type": source_identity.get("file_type"),
+        "dataset": source_identity.get("dataset"),
         "availability_state": availability_state,
         "checked_at_utc": checked_at_utc,
         "recorded_by": recorded_by,
@@ -262,6 +305,7 @@ def _build_base_record(
             str(record["source_entity_id"]),
             str(record["source_version"]),
             str(record["file_type"]),
+            str(record["dataset"]),
         )
     else:
         record["availability_id"] = None
@@ -310,8 +354,14 @@ def _verify_landed_identity(record: dict[str, Any], manifest_store: Any) -> None
             f"{landed.get('processing_state')!r}, not landed; only a landed record "
             "can mark an asset available"
         )
+    # F08.4 tags manifest records with their dataset; pre-F08.4 history
+    # has none, so the dataset comparison only applies when the landed
+    # record actually carries the tag.
     mismatches = [
-        field for field in IDENTITY_FIELDS if landed.get(field) != record.get(field)
+        field
+        for field in IDENTITY_FIELDS
+        if landed.get(field) != record.get(field)
+        and not (field == "dataset" and not _is_nonempty_string(landed.get("dataset")))
     ]
     if mismatches:
         raise ValueError(
@@ -355,6 +405,42 @@ def build_not_published_record(
     ]
     record["landed_source_file_id"] = None
     _refuse_when_landed_manifest_exists(record, manifest_store)
+    errors = validate_availability_record(record)
+    if errors:
+        raise ValueError(
+            "Invalid source availability record:\n- " + "\n- ".join(errors)
+        )
+    return record
+
+
+def build_invalid_record(
+    source_identity: dict[str, Any],
+    evidence_url: str,
+    evidence_note: str,
+    checked_at_utc: str,
+    recorded_by: str,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Return a validated invalid record for one discovered asset (F08.3).
+
+    The asset was discovered but failed required validation (a
+    structurally broken file, a header that can never satisfy the
+    Bronze contract, ...). evidence_url and evidence_note must describe
+    the failed check. The attempt's own history - hash, error message,
+    classification - stays in the source manifest, so no
+    landed_source_file_id is carried here; unlike not_published, the
+    claim is not contradicted by acquired or failed bytes.
+
+    Raises ValueError (sanitized) listing every problem.
+    """
+    record = _build_base_record(
+        source_identity, "invalid", checked_at_utc, recorded_by, run_id
+    )
+    record["evidence_url"] = str(evidence_url)
+    record["evidence_note"] = sanitize_error_message(str(evidence_note))[
+        :MAX_EVIDENCE_NOTE_LENGTH
+    ]
+    record["landed_source_file_id"] = None
     errors = validate_availability_record(record)
     if errors:
         raise ValueError(
@@ -523,10 +609,38 @@ class AvailabilityStore:
         source_entity_id: str,
         source_version: str,
         file_type: str,
+        dataset: str,
     ) -> dict[str, Any] | None:
         """Return the ledger row for an expected asset identity, or None."""
         return self.read(
             build_availability_id(
-                source_family, source_entity_id, source_version, file_type
+                source_family, source_entity_id, source_version, file_type, dataset
             )
         )
+
+    def list_by_city_dataset(
+        self, source_entity_id: str, dataset: str
+    ) -> list[dict[str, Any]]:
+        """Return every ledger row for one city/dataset slice (F08.6).
+
+        Coverage reporting derives the slice's current state from the
+        most recent checked row; this read path exists only for that
+        assembly and is read-only like every store method.
+        """
+        for name, value in (
+            ("source_entity_id", source_entity_id),
+            ("dataset", dataset),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} is required to read availability rows")
+        columns = ", ".join(AVAILABILITY_FIELDS)
+        sql = (
+            f"SELECT {columns} FROM {self.table_name} "
+            f"WHERE source_entity_id = {_sql_literal(source_entity_id)} "
+            f"AND dataset = {_sql_literal(dataset)}"
+        )
+        rows = self._require_spark().sql(sql).collect()
+        records: list[dict[str, Any]] = []
+        for row in rows:
+            records.append(dict(row.asDict()) if hasattr(row, "asDict") else dict(row))
+        return records

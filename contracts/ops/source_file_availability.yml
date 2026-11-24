@@ -1,4 +1,4 @@
-# Source-asset availability ledger contract (F07.3-T01).
+# Source-asset availability ledger contract (F07.3-T01, extended F08.3).
 #
 # The source manifest records one immutable row per ACQUIRED file and
 # cannot represent an expected asset that the source did not publish
@@ -6,7 +6,7 @@
 # expected asset identity, evidence-backed. Truth about acquired bytes
 # stays solely in the manifest; this ledger never duplicates it.
 #
-# Stages:
+# States:
 # - not_published: the source's own evidence confirms the asset was
 #   not published for this snapshot. Requires evidence_url +
 #   evidence_note, and is refused when a landed manifest record exists
@@ -15,17 +15,27 @@
 # - available: supersedes a prior not_published claim once bytes have
 #   landed. Requires the landed source_file_id, verified against the
 #   manifest store and matched to the identity.
+# - invalid (F08.3): a discovered asset that failed required
+#   validation. Requires evidence_url + evidence_note describing the
+#   failed check; no landed ID is carried - the attempt's own history
+#   stays in the source manifest.
+#
+# unknown and disabled (F08.3) are DERIVED coverage states, never
+# stored rows: a configured city/dataset with no ledger row is
+# `unknown`; a registry-disabled city is `disabled`.
 
 name: source_file_availability
 purpose: >-
   Evidence-backed availability status per expected source asset,
-  distinguishing confirmed not-published assets from acquisition
-  failures and parse/schema failures recorded in the manifest.
+  distinguishing confirmed not-published assets, discovered-but-invalid
+  assets, and available assets from acquisition failures and parse or
+  schema failures recorded in the manifest.
 table: trippilot_dev.ops.source_file_availability
 
 states:
   - not_published
   - available
+  - invalid
 
 fields:
   availability_id:
@@ -33,7 +43,7 @@ fields:
     required: true
     description: >-
       Deterministic ID: SHA-256 over
-      "source_family|source_entity_id|source_version|file_type|availability"
+      "source_family|source_entity_id|source_version|file_type|dataset|availability"
       (identity only, never a content hash, so it can never collide
       with manifest source_file_id values). One row per expected asset.
   source_family:
@@ -52,6 +62,14 @@ fields:
     type: string
     required: true
     description: Canonical file-type label from the manifest contract.
+  dataset:
+    type: string
+    required: true
+    description: >-
+      Controlled dataset tag (F08.3) completing the identity so assets
+      sharing a file type - listings, calendar and reviews are all
+      csv.gz - stay distinct. Required on new records; pre-F08.3 rows
+      are corrected in place through a documented data correction.
   availability_state:
     type: string
     required: true
@@ -61,19 +79,21 @@ fields:
     required: false
     description: >-
       The source listing or page checked as evidence; required when
-      the state is not_published and must start with https:// or http://.
+      the state is not_published or invalid and must start with
+      https:// or http://.
   evidence_note:
     type: string
     required: false
     description: >-
       What the operator observed at the evidence URL; required when
-      the state is not_published. Credentials are redacted.
+      the state is not_published or invalid. Credentials are redacted.
   landed_source_file_id:
     type: string
     required: false
     description: >-
       The manifest source_file_id of the landed bytes; required when
-      the state is available and never allowed when not_published.
+      the state is available and never allowed when not_published or
+      invalid.
   checked_at_utc:
     type: string
     required: true
@@ -88,12 +108,17 @@ fields:
     description: Provenance run ID from src/common/provenance.build_run_id.
 
 rules:
-  - One row per expected asset identity; upserts merge on
-    availability_id and update only the availability/evidence fields.
+  - One row per expected asset identity (family, entity, version, file
+    type, dataset); upserts merge on availability_id and update only
+    the availability/evidence fields.
   - Recording not_published is refused when a landed manifest record
     exists for the same identity and file type.
   - A download failure or timeout is never recorded as not_published;
     only confirmed evidence of absence qualifies.
+  - Recording invalid requires the failed check's evidence URL and
+    note; the attempt's own history stays in the source manifest.
+  - unknown and disabled are derived coverage states (F08.3), never
+    stored rows.
   - The ledger is current-state per asset; acquisition history stays in
-    the manifest and ingestion history in the per-dataset control
-    tables.
+    the manifest and ingestion history in the unified
+    ops.ingestion_manifest.

@@ -37,6 +37,7 @@ from src.common.ingestion_manifest import (
     IngestionManifestStore,
     build_ingestion_start_sql,
     build_ingestion_success_sql,
+    build_manifest_list_city_dataset_sql,
     build_manifest_read_sql,
     sql_string_literal,
     validate_dataset,
@@ -384,6 +385,71 @@ def test_store_rejects_unsafe_table_names(bad):
 # ---------------------------------------------------------------------------
 # YAML contract cross-check
 # ---------------------------------------------------------------------------
+
+
+def test_build_manifest_list_city_dataset_sql_scopes_city_and_dataset():
+    sql = build_manifest_list_city_dataset_sql(
+        "trippilot_test.ops.ingestion_manifest_test",
+        city="toronto",
+        dataset="listings",
+    )
+
+    assert sql == (
+        "SELECT * FROM trippilot_test.ops.ingestion_manifest_test "
+        "WHERE city = 'toronto' "
+        "AND dataset = 'listings'"
+    )
+
+
+def test_build_manifest_list_city_dataset_sql_requires_a_controlled_tag():
+    with pytest.raises(ValueError, match="Unknown dataset"):
+        build_manifest_list_city_dataset_sql(
+            "trippilot_test.ops.ingestion_manifest_test",
+            city="toronto",
+            dataset="misc",
+        )
+
+    with pytest.raises(ValueError, match="city is required"):
+        build_manifest_list_city_dataset_sql(
+            "trippilot_test.ops.ingestion_manifest_test",
+            city=" ",
+            dataset="listings",
+        )
+
+
+def test_store_list_for_city_dataset_executes_and_returns_row_dicts():
+    class _Row:
+        def __init__(self, values):
+            self._values = values
+
+        def asDict(self):
+            return dict(self._values)
+
+    class RowsSpark(StubSpark):
+        def sql(self, statement):
+            self.calls.append(statement)
+            if statement.startswith("SELECT"):
+                return _Result(
+                    [
+                        _Row(
+                            {
+                                "city": "toronto",
+                                "dataset": "listings",
+                                "status": "success",
+                            }
+                        )
+                    ]
+                )
+            return _Result([])
+
+    spark = RowsSpark()
+    store = IngestionManifestStore(MANIFEST_TABLE, spark=spark)
+
+    rows = store.list_for_city_dataset("toronto", "listings")
+
+    assert rows == [{"city": "toronto", "dataset": "listings", "status": "success"}]
+    assert "WHERE city = 'toronto'" in spark.calls[0]
+    assert "AND dataset = 'listings'" in spark.calls[0]
 
 
 def test_yaml_contract_matches_the_module_rules():

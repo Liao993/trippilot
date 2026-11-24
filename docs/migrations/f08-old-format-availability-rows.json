@@ -1,0 +1,37 @@
+{
+  "note": "F08.3/F08.4 legacy-data cleanup (2026-11-24): the two drill-era availability rows predate the dataset identity dimension. Their availability_ids were built from the old 4-part identity (family/entity/version/file_type), so the new 5-part read path can never resolve them, and drill-city is not a registered city. Archived verbatim before deletion from trippilot_test.ops.source_file_availability; the new-format drill evidence for registered cities is recorded separately by the F08 runtime drills.",
+  "source_table": "trippilot_test.ops.source_file_availability",
+  "archived_at_utc": "2026-11-24T00:00:00Z",
+  "rows": [
+    {
+      "availability_id": "f358161d1e9a8e310a9a30a6e1e6f9d0a1afcd50f2b12738fe37f7cfcd3a9caa",
+      "source_family": "insideairbnb",
+      "source_entity_id": "drill-city",
+      "source_version": "2026-11-23",
+      "file_type": "csv.gz",
+      "dataset": null,
+      "availability_state": "not_published",
+      "evidence_url": "https://insideairbnb.com/get-the-data/",
+      "evidence_note": "drill: data page lists no listings.csv.gz for this snapshot",
+      "landed_source_file_id": null,
+      "checked_at_utc": "2026-11-23T21:35:31Z",
+      "recorded_by": "genie-code-agent",
+      "run_id": "f4acf0a58c084b3cbfe651454146af0d"
+    },
+    {
+      "availability_id": "9fae86f5e3ecb619cb7e99f0f8622e219ba2966314a66252f30cf2f5d0df8989",
+      "source_family": "insideairbnb",
+      "source_entity_id": "drill-city",
+      "source_version": "2026-11-23",
+      "file_type": "geojson",
+      "dataset": null,
+      "availability_state": "available",
+      "evidence_url": null,
+      "evidence_note": null,
+      "landed_source_file_id": "55035703796a282da0bc6379990259901c843605bf53d6a3230f4d3569c032b3",
+      "checked_at_utc": "2026-11-23T21:35:31Z",
+      "recorded_by": "genie-code-agent",
+      "run_id": "bd819c3cd4494adc8da1f31921d970a4"
+    }
+  ]
+}

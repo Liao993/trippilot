@@ -58,6 +58,59 @@ def _success_control(**overrides):
     return control
 
 
+def test_decide_action_ignores_another_citys_success_for_the_same_slice():
+    """F08: same dataset tag and snapshot date for another city is a
+    different slice - it never blocks this city's load."""
+    controls = [
+        _success_control(city="hamburg", snapshot_date="2026-09-16", dataset="listings")
+    ]
+
+    assert (
+        decide_ingestion_action(
+            controls, "toronto", "2026-09-16", "a" * 64, dataset="listings"
+        )
+        == "load"
+    )
+    assert should_load(controls, "toronto", "2026-09-16") is True
+
+
+def test_decide_action_exact_retry_skips_only_against_the_own_city_row():
+    """F08: two cities succeeded for the same dataset/snapshot; each
+    exact same-file retry skips against its own city's row only."""
+    controls = [
+        _success_control(city="toronto", dataset="listings", source_file_id="a" * 64),
+        _success_control(city="hamburg", dataset="listings", source_file_id="b" * 64),
+    ]
+
+    assert (
+        decide_ingestion_action(
+            controls, "toronto", "2026-09-16", "a" * 64, dataset="listings"
+        )
+        == "skip"
+    )
+    assert (
+        decide_ingestion_action(
+            controls, "hamburg", "2026-09-16", "b" * 64, dataset="listings"
+        )
+        == "skip"
+    )
+
+
+def test_decide_action_a_corrected_file_never_blocks_another_city():
+    """F08: a corrected file blocked for one city leaves every other
+    city's same-dataset decision untouched."""
+    controls = [
+        _success_control(city="hamburg", dataset="calendar", source_file_id="b" * 64)
+    ]
+
+    assert (
+        decide_ingestion_action(
+            controls, "toronto", "2026-09-16", "c" * 64, dataset="calendar"
+        )
+        == "load"
+    )
+
+
 def test_should_load_when_no_control_record_exists():
     """
     If we have never loaded this city/snapshot, the pipeline should load it.

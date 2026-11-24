@@ -32,6 +32,7 @@ from src.quality.config_validation import (
     validate_city_registry,
     validate_config_files,
     validate_project_config,
+    validate_source_city_registration,
     validate_source_manifest_contract,
 )
 
@@ -44,18 +45,39 @@ PROJECT_CONFIG = {
     "sources": {
         "airbnb": {
             "provider": "insideairbnb",
+            "source_url": "https://insideairbnb.com/get-the-data/",
             "cities": {
                 "toronto": {
-                    "enabled": True,
-                    "raw_path": "/Volumes/trippilot_dev/bronze/source_files/x.csv.gz",
-                    "required_identifier": "id",
+                    "datasets": {
+                        "listings": {
+                            "file": "listings.csv.gz",
+                            "file_type": "csv.gz",
+                            "required_identifier": "id",
+                        }
+                    }
                 }
             },
         }
     },
 }
 
-CITY_REGISTRY = {"cities": [{"city": "toronto", "enabled": True}]}
+CITY_REGISTRY = {
+    "version": 1,
+    "cities": [
+        {
+            "city_id": "toronto",
+            "slug": "toronto",
+            "display_name": "Toronto",
+            "country_code": "CA",
+            "region": "Ontario",
+            "timezone": "America/Toronto",
+            "currency": "CAD",
+            "latitude": 43.6532,
+            "longitude": -79.3832,
+            "enabled": True,
+        }
+    ],
+}
 
 BRONZE_CONTRACT = {
     "bronze_listings": {
@@ -103,6 +125,7 @@ MANIFEST_CONTRACT = {
         "source_entity_id": {"type": "string", "required": True},
         "source_version": {"type": "string", "required": True},
         "file_type": {"type": "string", "required": True},
+        "dataset": {"type": "string", "required": False},
         "source_url": {"type": "string", "required": True},
         "retrieved_at_utc": {"type": "string", "required": True},
         "file_hash_sha256": {"type": "string", "required": True},
@@ -115,6 +138,7 @@ MANIFEST_CONTRACT = {
         "run_id": {"type": "string", "required": True},
         "processing_state": {"type": "string", "required": True},
         "error_message": {"type": "string", "required": False},
+        "error_type": {"type": "string", "required": False},
     },
 }
 
@@ -137,6 +161,123 @@ def test_missing_databricks_sections_are_reported():
     assert any("'sources'" in error for error in errors)
 
 
+def test_project_city_enabled_flag_is_rejected():
+    toronto = {**PROJECT_CONFIG["sources"]["airbnb"]["cities"]["toronto"]}
+    toronto["enabled"] = True
+    broken = {
+        **PROJECT_CONFIG,
+        "sources": {
+            "airbnb": {
+                **PROJECT_CONFIG["sources"]["airbnb"],
+                "cities": {"toronto": toronto},
+            }
+        },
+    }
+
+    errors = validate_project_config(broken)
+
+    assert any(
+        "city enablement lives ONLY in config/city_registry.yml" in error
+        for error in errors
+    )
+
+
+def test_project_missing_source_url_is_reported():
+    family = {
+        key: value
+        for key, value in PROJECT_CONFIG["sources"]["airbnb"].items()
+        if key != "source_url"
+    }
+    broken = {**PROJECT_CONFIG, "sources": {"airbnb": family}}
+
+    errors = validate_project_config(broken)
+
+    assert any("source_url" in error for error in errors)
+
+
+def test_project_empty_datasets_is_reported():
+    toronto = {"datasets": {}}
+    broken = {
+        **PROJECT_CONFIG,
+        "sources": {
+            "airbnb": {
+                **PROJECT_CONFIG["sources"]["airbnb"],
+                "cities": {"toronto": toronto},
+            }
+        },
+    }
+
+    errors = validate_project_config(broken)
+
+    assert any("datasets" in error for error in errors)
+
+
+def test_project_dataset_bad_file_type_is_reported():
+    datasets = {**PROJECT_CONFIG["sources"]["airbnb"]["cities"]["toronto"]["datasets"]}
+    datasets["listings"] = {**datasets["listings"], "file_type": "gzip"}
+    broken = {
+        **PROJECT_CONFIG,
+        "sources": {
+            "airbnb": {
+                **PROJECT_CONFIG["sources"]["airbnb"],
+                "cities": {
+                    "toronto": {
+                        "datasets": datasets,
+                    }
+                },
+            }
+        },
+    }
+
+    errors = validate_project_config(broken)
+
+    assert any("file_type" in error for error in errors)
+
+
+def test_project_dataset_file_name_type_mismatch_is_reported():
+    datasets = {**PROJECT_CONFIG["sources"]["airbnb"]["cities"]["toronto"]["datasets"]}
+    datasets["listings"] = {**datasets["listings"], "file": "listings.csv"}
+    broken = {
+        **PROJECT_CONFIG,
+        "sources": {
+            "airbnb": {
+                **PROJECT_CONFIG["sources"]["airbnb"],
+                "cities": {
+                    "toronto": {
+                        "datasets": datasets,
+                    }
+                },
+            }
+        },
+    }
+
+    errors = validate_project_config(broken)
+
+    assert any("does not end with the declared file_type" in error for error in errors)
+
+
+def test_source_city_registration_passes_for_registered_city():
+    assert validate_source_city_registration(PROJECT_CONFIG, CITY_REGISTRY) == []
+
+
+def test_source_city_registration_reports_unregistered_city():
+    project = {
+        "sources": {
+            "airbnb": {
+                "provider": "insideairbnb",
+                "cities": {"yyz": {"datasets": {}}},
+            }
+        }
+    }
+
+    errors = validate_source_city_registration(project, CITY_REGISTRY)
+
+    assert any(
+        "not a city_id registered in config/city_registry.yml" in error
+        for error in errors
+    )
+
+
 def test_empty_databricks_schemas_is_reported():
     broken = {
         **PROJECT_CONFIG,
@@ -150,24 +291,84 @@ def test_valid_city_registry_passes():
     assert validate_city_registry(CITY_REGISTRY) == []
 
 
+def test_city_registry_missing_version_is_reported():
+    errors = validate_city_registry({"cities": CITY_REGISTRY["cities"]})
+
+    assert any("version" in error for error in errors)
+
+
+def test_city_registry_bad_version_is_reported():
+    errors = validate_city_registry({**CITY_REGISTRY, "version": 0})
+
+    assert any("version" in error for error in errors)
+
+
 def test_empty_cities_list_is_reported():
-    errors = validate_city_registry({"cities": []})
+    errors = validate_city_registry({"version": 1, "cities": []})
     assert len(errors) == 1
     assert "'cities'" in errors[0]
 
 
 def test_city_entry_missing_enabled_is_reported():
-    broken = {"cities": [{"city": "toronto"}]}
-    errors = validate_city_registry(broken)
+    broken_entry = {
+        key: value
+        for key, value in CITY_REGISTRY["cities"][0].items()
+        if key != "enabled"
+    }
+    errors = validate_city_registry({**CITY_REGISTRY, "cities": [broken_entry]})
     assert len(errors) == 1
     assert "cities[0]" in errors[0]
     assert "enabled" in errors[0]
 
 
-def test_city_entry_with_blank_name_is_reported():
-    broken = {"cities": [{"city": "   ", "enabled": True}]}
+def test_city_entry_with_blank_id_is_reported():
+    broken = {
+        **CITY_REGISTRY,
+        "cities": [{**CITY_REGISTRY["cities"][0], "city_id": "   "}],
+    }
     errors = validate_city_registry(broken)
-    assert any("'city'" in error for error in errors)
+
+    assert any("'city_id'" in error for error in errors)
+
+
+def test_city_entry_slug_mismatch_is_reported():
+    broken = {
+        **CITY_REGISTRY,
+        "cities": [{**CITY_REGISTRY["cities"][0], "slug": "yyz"}],
+    }
+    errors = validate_city_registry(broken)
+
+    assert any("must equal the immutable city_id" in error for error in errors)
+
+
+def test_city_entry_bad_country_code_is_reported():
+    broken = {
+        **CITY_REGISTRY,
+        "cities": [{**CITY_REGISTRY["cities"][0], "country_code": "CAN"}],
+    }
+    errors = validate_city_registry(broken)
+
+    assert any("ISO 3166-1" in error for error in errors)
+
+
+def test_city_entry_bad_timezone_is_reported():
+    broken = {
+        **CITY_REGISTRY,
+        "cities": [{**CITY_REGISTRY["cities"][0], "timezone": "EST"}],
+    }
+    errors = validate_city_registry(broken)
+
+    assert any("IANA timezone" in error for error in errors)
+
+
+def test_city_duplicate_ids_are_reported():
+    broken = {
+        **CITY_REGISTRY,
+        "cities": [*CITY_REGISTRY["cities"], *CITY_REGISTRY["cities"]],
+    }
+    errors = validate_city_registry(broken)
+
+    assert any("duplicate city_id" in error for error in errors)
 
 
 def test_valid_bronze_contract_passes():
@@ -483,9 +684,14 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
         "sources:\n"
         "  airbnb:\n"
         "    provider: insideairbnb\n"
+        "    source_url: https://insideairbnb.com/get-the-data/\n"
         "    cities:\n"
         "      toronto:\n"
-        "        enabled: true\n"
+        "        datasets:\n"
+        "          listings:\n"
+        "            file: listings.csv.gz\n"
+        "            file_type: csv.gz\n"
+        "            required_identifier: id\n"
     )
     valid_bronze_yml = (
         "bronze_listings:\n"
