@@ -32,7 +32,6 @@ from src.quality.config_validation import (
     validate_city_registry,
     validate_config_files,
     validate_project_config,
-    validate_silver_contract,
     validate_source_manifest_contract,
 )
 
@@ -40,7 +39,7 @@ PROJECT_CONFIG = {
     "project": {"name": "trippilot", "owner": "Henry"},
     "databricks": {
         "catalog": "trippilot_dev",
-        "schemas": {"bronze": "bronze", "silver": "silver", "gold": "gold"},
+        "schemas": {"bronze": "bronze", "gold": "gold"},
     },
     "sources": {
         "airbnb": {
@@ -85,18 +84,6 @@ REVIEWS_CONTRACT = {
         "required_columns": ["listing_id", "id", "date"],
         "source_types": "string",
         "write_policy": "replace_city_snapshot",
-    }
-}
-
-SILVER_CONTRACT = {
-    "silver_listings": {
-        "table": "trippilot_dev.silver.airbnb_listings_silver",
-        "business_key": ["listing_id", "city", "snapshot_date"],
-        "required_columns": ["listing_id", "city", "snapshot_date"],
-        "rules": {
-            "id": {"required": True, "type": "string", "allow_empty": False},
-            "price": {"required": False, "type": "decimal", "minimum": 0},
-        },
     }
 }
 
@@ -414,36 +401,6 @@ def test_row_validation_date_fields_must_be_subset_is_reported():
     assert "subset of required_fields" in errors[0]
 
 
-def test_valid_silver_contract_passes():
-    assert validate_silver_contract(SILVER_CONTRACT) == []
-
-
-def test_silver_empty_business_key_is_reported():
-    broken = {
-        "silver_listings": {**SILVER_CONTRACT["silver_listings"], "business_key": []}
-    }
-    errors = validate_silver_contract(broken)
-    assert any("business_key" in error for error in errors)
-
-
-def test_silver_missing_rules_is_reported():
-    broken = {"silver_listings": {**SILVER_CONTRACT["silver_listings"], "rules": {}}}
-    errors = validate_silver_contract(broken)
-    assert any("silver_listings.rules" in error for error in errors)
-
-
-def test_silver_non_mapping_rule_is_reported():
-    broken = {
-        "silver_listings": {
-            **SILVER_CONTRACT["silver_listings"],
-            "rules": {"id": "required"},
-        }
-    }
-    errors = validate_silver_contract(broken)
-    assert len(errors) == 1
-    assert "silver_listings.rules.id" in errors[0]
-
-
 def test_valid_manifest_contract_passes():
     assert validate_source_manifest_contract(MANIFEST_CONTRACT) == []
 
@@ -551,19 +508,6 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
         "  required_columns:\n"
         "    - listing_id\n"
     )
-    valid_silver_yml = (
-        "silver_listings:\n"
-        "  table: a.b.c\n"
-        "  business_key:\n"
-        "    - listing_id\n"
-        "  required_columns:\n"
-        "    - listing_id\n"
-        "  rules:\n"
-        "    id:\n"
-        "      required: true\n"
-        "      type: string\n"
-    )
-
     (tmp_path / "config").mkdir()
     (tmp_path / "contracts").mkdir()
     (tmp_path / "config/project.yml").write_text(valid_project_yml, encoding="utf-8")
@@ -574,7 +518,6 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
         "contracts/airbnb/bronze_listings.yml",
         "contracts/airbnb/bronze_calendar.yml",
         "contracts/airbnb/bronze_reviews.yml",
-        "contracts/airbnb/silver_listings.yml",
     ]:
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
     (tmp_path / "contracts/airbnb/bronze_listings.yml").write_text(
@@ -585,9 +528,6 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
     )
     (tmp_path / "contracts/airbnb/bronze_reviews.yml").write_text(
         valid_reviews_yml, encoding="utf-8"
-    )
-    (tmp_path / "contracts/airbnb/silver_listings.yml").write_text(
-        valid_silver_yml, encoding="utf-8"
     )
     (tmp_path / "contracts/ops").mkdir(parents=True, exist_ok=True)
     (tmp_path / "contracts/ops/source_file_manifest.yml").write_text(
@@ -610,7 +550,6 @@ def test_validate_config_files_reports_missing_file(tmp_path):
         "contracts/airbnb/bronze_listings.yml",
         "contracts/airbnb/bronze_calendar.yml",
         "contracts/airbnb/bronze_reviews.yml",
-        "contracts/airbnb/silver_listings.yml",
         "contracts/ops/source_file_manifest.yml",
     ]:
         assert rel in message

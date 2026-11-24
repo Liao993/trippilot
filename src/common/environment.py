@@ -1,33 +1,42 @@
 """
 Resolve the pipeline run mode and every table name the pipeline may touch.
 
-The run mode is the single source of truth for environment isolation:
+The run mode is the single source of truth for environment isolation
+(F07.4: physical catalog separation):
 
-- ``test`` (the default) maps every logical table to an isolated ``_test``
-  Delta table. Code running in test mode cannot write the development
-  tables, because the development names are never returned.
-- ``live`` resolves the normal development tables.
+- ``test`` (the default) maps every logical table into the dedicated
+  ``trippilot_test`` catalog. Code running in test mode cannot write
+  the development tables, because ``trippilot_dev`` names are never
+  returned in test mode.
+- ``live`` resolves the development tables in ``trippilot_dev``.
 
-The notebook dropdown is only a convenience. This module, not the widget,
-enforces isolation: all target and audit table names must flow through
-``resolve_table`` / ``resolve_tables``.
+Both catalogs use the same schema and table names, so shapes stay
+aligned while data and write destinations stay isolated. Every
+resolved mapping is guarded by ``validate_destinations``: a test-mode
+run can never receive a ``trippilot_dev`` destination and vice versa.
+
+The notebook dropdown is only a convenience. This module, not the
+widget, enforces isolation: all target and audit table names must flow
+through ``resolve_table`` / ``resolve_tables``.
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from src.common.run_controls import should_load
 
 VALID_RUN_MODES = ("test", "live")
 
-# Canonical development table names (run mode "live").
+# F07.4: physical catalog separation. Test execution writes only the
+# dedicated test catalog; development/canonical execution writes only
+# the development catalog.
+DEV_CATALOG = "trippilot_dev"
+TEST_CATALOG = "trippilot_test"
+
+# Canonical development table names (run mode "live"). Test mode maps
+# every entry into the TEST_CATALOG with the same schema/table names.
 LIVE_TABLES = {
     "bronze": "trippilot_dev.bronze.airbnb_listings_bronze",
-    # Post-cleanup follow-up (R1): the control table has only ever held
-    # listings run history, so its name - and this key - now say so,
-    # matching the per-dataset calendar/reviews convention below.
-    "listings_control": "trippilot_dev.bronze.airbnb_listings_ingestion_control",
-    "silver": "trippilot_dev.silver.airbnb_listings_silver",
-    "silver_rejected": "trippilot_dev.silver.airbnb_listings_rejected",
     "quality_results": "trippilot_dev.ops.quality_results",
     # The former "exclusion" key was removed in the pre-F07 cleanup: it
     # pointed at a placeholder table (ops.exclusion) that was never
@@ -38,17 +47,15 @@ LIVE_TABLES = {
     # that the source did not publish (never a duplicate of the
     # manifest, which only records acquired files).
     "source_availability": "trippilot_dev.ops.source_file_availability",
+    # F07.4: ONE shared ingestion manifest per environment. Every
+    # dataset records its run outcomes here (one row per source file
+    # per ingestion run); the per-dataset control tables were retired
+    # after their history was migrated.
+    "ingestion_manifest": "trippilot_dev.ops.ingestion_manifest",
     # F06.2: separate Bronze data products for the calendar and review
-    # datasets - never conflated with the listings table. Test mode
-    # resolves the isolated *_test variants via the shared rules above.
+    # datasets - never conflated with the listings table.
     "calendar_bronze": "trippilot_dev.bronze.airbnb_calendar_bronze",
     "reviews_bronze": "trippilot_dev.bronze.airbnb_reviews_bronze",
-    # F06.3: per-dataset ingestion-control tables (with the listings
-    # control renamed to the same convention above): every dataset
-    # records its run outcomes in its own table so one dataset's rows
-    # can never influence another's decision.
-    "calendar_control": "trippilot_dev.bronze.airbnb_calendar_ingestion_control",
-    "reviews_control": "trippilot_dev.bronze.airbnb_reviews_ingestion_control",
     # F07.2: four more separate Bronze data products - the summary
     # listings/reviews files and the neighbourhood CSV/GeoJSON assets
     # are never conflated with the detailed facts tables above.
@@ -58,20 +65,13 @@ LIVE_TABLES = {
     "neighbourhood_geometry_bronze": (
         "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze"
     ),
-    # ... and their per-dataset ingestion-control tables (F06.3 shape).
-    "listings_summary_control": (
-        "trippilot_dev.bronze.airbnb_listings_summary_ingestion_control"
-    ),
-    "reviews_summary_control": (
-        "trippilot_dev.bronze.airbnb_reviews_summary_ingestion_control"
-    ),
-    "neighbourhoods_control": (
-        "trippilot_dev.bronze.airbnb_neighbourhoods_ingestion_control"
-    ),
-    "neighbourhood_geometry_control": (
-        "trippilot_dev.bronze.airbnb_neighbourhood_geometry_ingestion_control"
-    ),
 }
+
+
+def catalog_for(run_mode: str) -> str:
+    """Return the physical catalog that belongs to the run mode (F07.4)."""
+    mode = validate_run_mode(run_mode)
+    return TEST_CATALOG if mode == "test" else DEV_CATALOG
 
 
 def validate_run_mode(run_mode: str) -> str:
@@ -102,12 +102,12 @@ def resolve_table(logical_name: str, run_mode: str) -> str:
     Resolve one logical table name to a fully qualified table name.
 
     Args:
-        logical_name: Key in LIVE_TABLES, such as "bronze" or "silver".
+        logical_name: Key in LIVE_TABLES, such as "bronze" or "quality_results".
         run_mode: "test" or "live".
 
     Returns:
-        The isolated ``_test`` table in test mode, the development table
-        in live mode.
+        The table in the dedicated ``trippilot_test`` catalog in test
+        mode, the development table in ``trippilot_dev`` in live mode.
     """
     mode = validate_run_mode(run_mode)
 
@@ -120,8 +120,8 @@ def resolve_table(logical_name: str, run_mode: str) -> str:
     live_name = LIVE_TABLES[logical_name]
 
     if mode == "test":
-        catalog, schema, table = live_name.split(".")
-        return f"{catalog}.{schema}.{table}_test"
+        _catalog, schema, table = live_name.split(".")
+        return f"{TEST_CATALOG}.{schema}.{table}"
 
     return live_name
 
@@ -131,11 +131,73 @@ def resolve_tables(run_mode: str) -> dict[str, str]:
     Resolve every pipeline table for the validated run mode.
 
     Returns:
-        A mapping of logical name to fully qualified table name.
+        A mapping of logical name to fully qualified table name, guarded
+        by ``validate_destinations`` for the run mode.
     """
     mode = validate_run_mode(run_mode)
 
-    return {name: resolve_table(name, mode) for name in LIVE_TABLES}
+    resolved = {name: resolve_table(name, mode) for name in LIVE_TABLES}
+    return validate_destinations(mode, resolved)
+
+
+def validate_destination(table_name: str, run_mode: str) -> str:
+    """
+    Guard one resolved destination against the wrong catalog (F07.4).
+
+    Every table a run may write must live in the catalog that belongs
+    to the validated run mode: a test-mode run can never receive a
+    ``trippilot_dev`` destination, and a live/dev run can never receive
+    a ``trippilot_test`` one. Call this before any write to a table
+    name that did not come straight from ``resolve_table``.
+
+    Raises:
+        ValueError: When the destination is not inside the mode's
+        catalog (or points at the other catalog).
+    """
+    mode = validate_run_mode(run_mode)
+    expected_catalog = catalog_for(mode)
+    forbidden_catalog = DEV_CATALOG if mode == "test" else TEST_CATALOG
+
+    if not isinstance(table_name, str) or not table_name.startswith(
+        f"{expected_catalog}."
+    ):
+        raise ValueError(
+            f"Destination {table_name!r} is outside the {mode!r} catalog "
+            f"{expected_catalog!r}; refusing to touch it. Resolve the table "
+            "through src.common.environment for the selected run mode."
+        )
+    if table_name.startswith(f"{forbidden_catalog}."):
+        raise ValueError(
+            f"Destination {table_name!r} belongs to the {forbidden_catalog!r} "
+            f"catalog but the run mode is {mode!r}; refusing a cross-environment "
+            "write."
+        )
+    return table_name
+
+
+def validate_destinations(run_mode: str, tables: Mapping[str, str]) -> dict[str, str]:
+    """
+    Validate every resolved destination against the run mode.
+
+    Args:
+        run_mode: "test" or "live".
+        tables: Mapping of logical name to fully qualified table name,
+        such as the result of ``resolve_tables``.
+
+    Returns:
+        The same mapping as a plain dict, once every destination has
+        been validated for the run mode.
+
+    Raises:
+        ValueError: Naming the first offending table.
+    """
+    mode = validate_run_mode(run_mode)
+    for key, table_name in tables.items():
+        try:
+            validate_destination(table_name, mode)
+        except ValueError as error:
+            raise ValueError(f"{key}: {error}") from error
+    return dict(tables)
 
 
 def validate_force_reload(force_reload: Any) -> bool:

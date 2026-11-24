@@ -30,7 +30,6 @@ CONFIG_FILES: dict[str, str] = {
     "contracts/airbnb/bronze_reviews_summary.yml": "bronze_contract",
     "contracts/airbnb/bronze_neighbourhoods.yml": "bronze_contract",
     "contracts/airbnb/bronze_neighbourhood_geometry.yml": "bronze_contract",
-    "contracts/airbnb/silver_listings.yml": "silver_contract",
     "contracts/ops/source_file_manifest.yml": "source_manifest_contract",
 }
 
@@ -187,43 +186,6 @@ def validate_bronze_contract(
     return errors
 
 
-def validate_silver_contract(
-    content: dict[str, Any],
-    label: str = "contracts/airbnb/silver_listings.yml",
-) -> list[str]:
-    """Check the table, business key, columns and rules of the Silver contract."""
-    try:
-        rules = get_table_rules(content, "silver_listings")
-    except TypeError as exc:
-        return [f"{label}: {exc}"]
-
-    errors: list[str] = []
-    if not _is_nonempty_string(rules.get("table")):
-        errors.append(f"{label}: 'silver_listings.table' must be a non-empty string")
-    if not _is_nonempty_string_list(rules.get("business_key")):
-        errors.append(
-            f"{label}: 'silver_listings.business_key' must be a non-empty "
-            "list of column names"
-        )
-    if not _is_nonempty_string_list(rules.get("required_columns")):
-        errors.append(
-            f"{label}: 'silver_listings.required_columns' must be a non-empty "
-            "list of column names"
-        )
-
-    column_rules = rules.get("rules")
-    if not isinstance(column_rules, dict) or len(column_rules) == 0:
-        errors.append(f"{label}: 'silver_listings.rules' must be a non-empty mapping")
-    else:
-        for name, rule in column_rules.items():
-            if not isinstance(rule, dict):
-                errors.append(
-                    f"{label}: 'silver_listings.rules.{name}' must be a mapping"
-                )
-
-    return errors
-
-
 MANIFEST_REQUIRED_FIELDS = (
     "source_file_id",
     "source_family",
@@ -329,7 +291,6 @@ VALIDATORS = {
     "project": validate_project_config,
     "city_registry": validate_city_registry,
     "bronze_contract": validate_bronze_contract,
-    "silver_contract": validate_silver_contract,
     "source_manifest_contract": validate_source_manifest_contract,
 }
 

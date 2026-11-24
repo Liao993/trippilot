@@ -1,11 +1,12 @@
 """Canonical shapes and idempotent setup for operational tables.
 
-The ingestion-control and quality-result tables used to be created (and,
-for the listings control table, evolved) by ad-hoc SQL spread across
-notebooks. This module defines every operational table shape in one
-place and exposes idempotent create/repair helpers, so
+The unified ingestion manifest and quality-result tables are defined
+here in one place, with idempotent create/repair helpers, so
 notebooks/ops/setup_control_tables.py can initialize either run mode
-through the shared environment resolver.
+through the shared environment resolver. (F07.4: the seven per-dataset
+ingestion-control tables were consolidated into ONE shared
+ops.ingestion_manifest per environment after their history was
+migrated.)
 
 The helpers mirror the ManifestStore pattern: pure SQL builders covered
 exactly by unit tests, plus a thin Spark-injected apply step. Existing
@@ -21,25 +22,28 @@ _SAFE_TABLE_NAME = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+){2}$")
 _SAFE_COLUMN_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SAFE_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\(\d+\))?$")
 
-LISTINGS_CONTROL_COLUMNS: dict[str, str] = {
+# F07.4: ONE shared ingestion manifest per environment (ops.ingestion_manifest
+# in each catalog). Extends the retired F06.3 per-dataset control shape
+# (city, snapshot_date, run_id, status, row_count, started/completed,
+# error_message, source_file_id, prior_source_file_id, dataset) with
+# reconciliation counts and target_table; the legacy row_count maps to
+# loaded_row_count when history is migrated. Column order defines the
+# positional INSERT in src/common/ingestion_manifest.py.
+INGESTION_MANIFEST_COLUMNS: dict[str, str] = {
     "city": "STRING",
     "snapshot_date": "STRING",
     "run_id": "STRING",
-    "status": "STRING",
-    "row_count": "BIGINT",
-    "started_at_utc": "STRING",
-    "completed_at_utc": "STRING",
-    "error_message": "STRING",
+    "dataset": "STRING",
     "source_file_id": "STRING",
     "prior_source_file_id": "STRING",
-}
-
-# Calendar/reviews control tables carry every listings column plus the
-# explicit dataset tag (F06.3), so one dataset's rows can never leak
-# into another's scope.
-PER_DATASET_CONTROL_COLUMNS: dict[str, str] = {
-    **LISTINGS_CONTROL_COLUMNS,
-    "dataset": "STRING",
+    "status": "STRING",
+    "source_row_count": "BIGINT",
+    "loaded_row_count": "BIGINT",
+    "rejected_row_count": "BIGINT",
+    "started_at_utc": "STRING",
+    "completed_at_utc": "STRING",
+    "target_table": "STRING",
+    "error_message": "STRING",
 }
 
 QUALITY_RESULTS_COLUMNS: dict[str, str] = {
@@ -58,15 +62,9 @@ QUALITY_RESULTS_COLUMNS: dict[str, str] = {
 # Data tables (bronze, silver, ...) are intentionally absent: they are
 # created by their ingestion flows, not by operational setup.
 OPERATIONAL_TABLE_SHAPES: Mapping[str, Mapping[str, str]] = {
-    "listings_control": LISTINGS_CONTROL_COLUMNS,
-    "calendar_control": PER_DATASET_CONTROL_COLUMNS,
-    "reviews_control": PER_DATASET_CONTROL_COLUMNS,
-    # F07.2: the summary/neighbourhood Bronze datasets keep their own
-    # per-dataset ingestion-control tables (F06.3 shape).
-    "listings_summary_control": PER_DATASET_CONTROL_COLUMNS,
-    "reviews_summary_control": PER_DATASET_CONTROL_COLUMNS,
-    "neighbourhoods_control": PER_DATASET_CONTROL_COLUMNS,
-    "neighbourhood_geometry_control": PER_DATASET_CONTROL_COLUMNS,
+    # F07.4: the ONE shared ingestion manifest replaced the seven
+    # per-dataset control tables (their history was migrated first).
+    "ingestion_manifest": INGESTION_MANIFEST_COLUMNS,
     "quality_results": QUALITY_RESULTS_COLUMNS,
 }
 
@@ -175,3 +173,38 @@ def ensure_schemas(spark: Any, table_names: Iterable[str]) -> list[str]:
             spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_schema}")
             created.append(catalog_schema)
     return created
+
+
+def ensure_reserved_schemas(spark: Any, schemas: Iterable[str]) -> list[str]:
+    """CREATE SCHEMA IF NOT EXISTS for stage schemas with no tables yet.
+
+    Reserved schemas keep a future stage's documented home available -
+    e.g. the empty silver schema awaiting the F08 rebuild - without
+    any resolver keys or tables existing for that stage.
+    """
+    ensured: list[str] = []
+    for schema in schemas:
+        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        ensured.append(schema)
+    return ensured
+
+
+_SAFE_CATALOG_NAME = re.compile(r"^[a-z0-9_]+$")
+
+
+def ensure_catalog(spark: Any, catalog: str) -> str:
+    """CREATE CATALOG IF NOT EXISTS for one catalog; idempotent.
+
+    F07.4 physical isolation: the dedicated test catalog (and the
+    development catalog, when it does not exist yet) are created here
+    so schema/table setup can proceed. Returns the catalog name.
+
+    Raises:
+        ValueError: When the name is not a plain lowercase identifier.
+    """
+    if not isinstance(catalog, str) or not _SAFE_CATALOG_NAME.fullmatch(catalog):
+        raise ValueError(
+            f"Invalid catalog name {catalog!r}; expected a plain lowercase identifier"
+        )
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+    return catalog

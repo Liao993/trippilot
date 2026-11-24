@@ -1,0 +1,122 @@
+# Unified ingestion manifest contract (F07.4).
+#
+# ONE shared table per environment - ops.ingestion_manifest in each
+# catalog - records the outcome of every dataset load: one row per
+# source file per ingestion run. It replaced the seven per-dataset
+# ingestion-control tables (their history was migrated first).
+#
+# This file is the human-facing documentation of the module rules in
+# src/common/ingestion_manifest.py; unit tests cross-check the two so
+# they cannot drift.
+
+table: ops.ingestion_manifest
+
+# One row per source file or dataset loaded during one ingestion run. A
+# run loading several assets writes one row per asset, sharing the run
+# identifier; one asset failing never disturbs another asset's row.
+row_granularity: one row per source file per ingestion run
+
+# Identity / idempotency scope: (dataset, city, snapshot_date,
+# source_file_id) identifies the exact bytes of one attempted load. The
+# reused decision helpers (decide_ingestion_action) turn this into
+# skip / exact-rerun / controlled-replace decisions.
+identity: dataset + city + snapshot_date + source_file_id
+
+datasets:
+  - listings
+  - calendar
+  - reviews
+  - listings_summary
+  - reviews_summary
+  - neighbourhoods
+  - neighbourhood_geometry
+
+statuses: [running, success, failed]
+
+valid_transitions:
+  running: [success, failed]
+  success: []
+  failed: []
+
+fields:
+  city:
+    required: true
+    type: string
+    description: >-
+      Source city entity id (e.g. toronto), taken from the landed
+      manifest record, never from a widget or path.
+  snapshot_date:
+    required: true
+    type: string
+    description: >-
+      Source snapshot date - the source version, never the retrieval or
+      load date.
+  run_id:
+    required: true
+    type: string
+    description: >-
+      Hex run identifier shared by every asset of one ingestion run and
+      identical to the Bronze _run_id provenance column.
+  dataset:
+    required: true
+    type: string
+    description: Controlled dataset tag (see datasets); no arbitrary strings.
+  source_file_id:
+    required: true
+    type: string
+    description: >-
+      Identity of the exact landed bytes; references
+      ops.source_file_manifest, which carries source_url, file name,
+      content hash and sizes (not duplicated here).
+  prior_source_file_id:
+    required: false
+    type: string
+    description: >-
+      On a controlled reprocess, the identity of the superseded load
+      (replacement lineage).
+  status:
+    required: true
+    type: string
+    description: >-
+      Load lifecycle (see statuses). Source availability states such
+      as not_published are recorded in ops.source_file_availability
+      (F07.3), never here: a load that never started leaves no row.
+  source_row_count:
+    required: false
+    type: bigint
+    description: >-
+      Raw rows read from the landed object (CSV header excluded);
+      NULL while running and for migrated history that did not record
+      it.
+  loaded_row_count:
+    required: false
+    type: bigint
+    description: >-
+      Rows written to the target slice; migrated history maps the legacy
+      row_count here.
+  rejected_row_count:
+    required: false
+    type: bigint
+    description: >-
+      Rows retained in the target but flagged invalid by the row-quality
+      policy; loaded equals source and valid + rejected reconcile.
+  started_at_utc:
+    required: true
+    type: string
+    description: ISO-8601 UTC load start.
+  completed_at_utc:
+    required: false
+    type: string
+    description: ISO-8601 UTC load completion; NULL while running.
+  target_table:
+    required: true
+    type: string
+    description: >-
+      Fully qualified table written, in the run's own catalog - test
+      writes are traceable by environment and run ID.
+  error_message:
+    required: false
+    type: string
+    description: >-
+      Concise, sanitized failure detail (no secrets or unnecessary
+      personal data); NULL on success.

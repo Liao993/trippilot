@@ -23,6 +23,14 @@ bronze_listings:
   # slice ONLY through an explicit reprocess authorization, with a
   # control record linking the new identity to the one it replaces.
   corrected_file_policy: explicit_reprocess_replace_slice
+  # Row-level quality policy (F06.2-T03 convention, extended to the
+  # listings contract when the dataset joined the shared Bronze flow
+  # for test-catalog population): the listing id must be present and
+  # non-blank. Invalid rows are RETAINED with
+  # _quality_status/_quality_reason.
+  row_validation:
+    required_fields:
+      - id
   provenance_columns:
     - _source
     - _city

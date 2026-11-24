@@ -152,7 +152,7 @@ def decide_ingestion_action(
         # after a failure, or a brand-new snapshot date.
         return "load"
 
-    prior_id = latest_successful_source_file_id(successful)
+    prior_id = latest_successful_source_file_id(successful, dataset=dataset)
     if prior_id == source_file_id:
         if force_reload:
             return "load"
@@ -173,20 +173,28 @@ def decide_ingestion_action(
 
 def latest_successful_source_file_id(
     controls: list[dict[str, Any]],
+    dataset: str = "listings",
 ) -> str | None:
     """Return the source_file_id of the latest successful control row.
 
-    "Latest" is the row with the newest completed_at_utc. Legacy rows
-    without a source_file_id yield None. Used to link a controlled
-    reprocess to the identity it replaces.
+    Since the unified ingestion manifest (F07.4) one slice's rows span
+    every dataset, the scope is REQUIRED: only rows in the given
+    dataset's scope are considered, using the same _in_dataset_scope
+    rule the ingestion decision uses - a tagged row never leaks into
+    another dataset's reprocess link. "Latest" is the row with the
+    newest completed_at_utc. Legacy rows without a source_file_id
+    yield None. Used to link a controlled reprocess to the identity
+    it replaces.
     """
-    with_identity = [
-        control for control in controls if control.get("status") == "success"
+    successful = [
+        control
+        for control in controls
+        if control.get("status") == "success" and _in_dataset_scope(control, dataset)
     ]
-    if not with_identity:
+    if not successful:
         return None
     latest = max(
-        with_identity,
+        successful,
         key=lambda control: (control.get("completed_at_utc") or "",),
     )
     return latest.get("source_file_id")

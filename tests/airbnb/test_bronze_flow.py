@@ -2,10 +2,13 @@
 
 The orchestration (run_bronze_ingestion) needs a live Spark session and
 is verified by the notebook drill (T12); these tests cover the pure,
-CI-safe helpers exactly: the control-row SQL builders (including SQL
-literal escaping), the provenance-column mapping against the real
-build_provenance_columns output, the string-preserving read options, and
-the dataset specs' environment-resolver keys.
+CI-safe helpers exactly: the provenance-column mapping against the real
+build_provenance_columns output, the string-preserving read options, the
+dataset specs' environment-resolver keys (F07.4: physical catalog
+separation, no _test suffixes), and the landed-source verification
+dispatch. The run-control SQL builders now live in
+src/common/ingestion_manifest.py and are covered by
+tests/common/test_ingestion_manifest.py.
 """
 
 import gzip
@@ -37,16 +40,11 @@ from src.airbnb.bronze_flow import (
     PROVENANCE_COLUMNS,
     READ_OPTIONS,
     BronzeDatasetSpec,
-    build_control_insert_sql,
-    build_control_success_sql,
     repo_root,
-    sql_string_literal,
     verify_and_inspect_source,
 )
 from src.common.environment import resolve_table
 from src.common.provenance import build_provenance_columns
-
-CONTROL_TABLE = "trippilot_dev.bronze.airbnb_calendar_ingestion_control_test"
 
 
 def test_repo_root_contains_project_layout():
@@ -55,76 +53,6 @@ def test_repo_root_contains_project_layout():
     assert (root / "src").is_dir()
     assert (root / "config").is_dir()
     assert (root / "contracts").is_dir()
-
-
-def test_sql_string_literal_quotes_and_escapes():
-    assert sql_string_literal("toronto") == "'toronto'"
-    assert sql_string_literal("o'brien") == "'o''brien'"
-
-
-def test_build_control_insert_sql_with_null_prior():
-    sql = build_control_insert_sql(
-        CONTROL_TABLE,
-        city="toronto",
-        snapshot_date="2026-09-16",
-        run_id="run-1",
-        started_at_utc="2026-11-19T10:00:00+00:00",
-        source_file_id="abc123",
-        prior_source_file_id=None,
-        dataset="calendar",
-    )
-
-    assert sql == (
-        f"INSERT INTO {CONTROL_TABLE} VALUES ("
-        "'toronto', '2026-09-16', 'run-1', 'running', 0, "
-        "'2026-11-19T10:00:00+00:00', NULL, NULL, 'abc123', NULL, 'calendar')"
-    )
-
-
-def test_build_control_insert_sql_with_prior_identity():
-    sql = build_control_insert_sql(
-        CONTROL_TABLE,
-        city="toronto",
-        snapshot_date="2026-09-16",
-        run_id="run-2",
-        started_at_utc="2026-11-19T11:00:00+00:00",
-        source_file_id="def456",
-        prior_source_file_id="abc123",
-        dataset="calendar",
-    )
-
-    assert sql.endswith("'def456', 'abc123', 'calendar')")
-
-
-def test_build_control_insert_sql_escapes_quotes():
-    sql = build_control_insert_sql(
-        CONTROL_TABLE,
-        city="o'brien",
-        snapshot_date="2026-09-16",
-        run_id="run-3",
-        started_at_utc="t",
-        source_file_id="x",
-        prior_source_file_id=None,
-        dataset="reviews",
-    )
-
-    assert "'o''brien'" in sql
-
-
-def test_build_control_success_sql_shape():
-    sql = build_control_success_sql(
-        CONTROL_TABLE,
-        run_id="run-1",
-        row_count=8048251,
-        completed_at_utc="2026-11-19T10:05:00+00:00",
-    )
-
-    assert sql == (
-        f"UPDATE {CONTROL_TABLE} SET status = 'success', "
-        "row_count = 8048251, "
-        "completed_at_utc = '2026-11-19T10:05:00+00:00', "
-        "error_message = NULL WHERE run_id = 'run-1'"
-    )
 
 
 def test_provenance_columns_match_build_provenance_columns_keys():
@@ -159,7 +87,6 @@ def test_spec_defaults():
         contract_path="contracts/airbnb/bronze_calendar.yml",
         rules_key="bronze_calendar",
         bronze_key="calendar_bronze",
-        control_key="calendar_control",
     )
 
     assert spec.manifest_key == "source_manifest"
@@ -169,9 +96,21 @@ def test_spec_defaults():
         # frozen dataclass: assignment must fail
         spec.dataset = "other"
 
+    # F07.4: the per-dataset control_key is gone - every run records
+    # into the ONE shared ingestion manifest.
+    with pytest.raises(TypeError):
+        BronzeDatasetSpec(
+            dataset="calendar",
+            schema_label="calendar",
+            contract_path="contracts/airbnb/bronze_calendar.yml",
+            rules_key="bronze_calendar",
+            bronze_key="calendar_bronze",
+            control_key="calendar_control",
+        )
+
 
 @pytest.mark.parametrize(
-    "spec_kwargs, bronze_suffix, control_suffix",
+    "spec_kwargs, bronze_table",
     [
         (
             {
@@ -180,10 +119,8 @@ def test_spec_defaults():
                 "contract_path": "contracts/airbnb/bronze_calendar.yml",
                 "rules_key": "bronze_calendar",
                 "bronze_key": "calendar_bronze",
-                "control_key": "calendar_control",
             },
-            "airbnb_calendar_bronze_test",
-            "airbnb_calendar_ingestion_control_test",
+            "airbnb_calendar_bronze",
         ),
         (
             {
@@ -192,10 +129,8 @@ def test_spec_defaults():
                 "contract_path": "contracts/airbnb/bronze_reviews.yml",
                 "rules_key": "bronze_reviews",
                 "bronze_key": "reviews_bronze",
-                "control_key": "reviews_control",
             },
-            "airbnb_reviews_bronze_test",
-            "airbnb_reviews_ingestion_control_test",
+            "airbnb_reviews_bronze",
         ),
         (
             {
@@ -204,10 +139,8 @@ def test_spec_defaults():
                 "contract_path": "contracts/airbnb/bronze_listings_summary.yml",
                 "rules_key": "bronze_listings_summary",
                 "bronze_key": "listings_summary_bronze",
-                "control_key": "listings_summary_control",
             },
-            "airbnb_listings_summary_bronze_test",
-            "airbnb_listings_summary_ingestion_control_test",
+            "airbnb_listings_summary_bronze",
         ),
         (
             {
@@ -216,10 +149,8 @@ def test_spec_defaults():
                 "contract_path": "contracts/airbnb/bronze_reviews_summary.yml",
                 "rules_key": "bronze_reviews_summary",
                 "bronze_key": "reviews_summary_bronze",
-                "control_key": "reviews_summary_control",
             },
-            "airbnb_reviews_summary_bronze_test",
-            "airbnb_reviews_summary_ingestion_control_test",
+            "airbnb_reviews_summary_bronze",
         ),
         (
             {
@@ -228,10 +159,8 @@ def test_spec_defaults():
                 "contract_path": "contracts/airbnb/bronze_neighbourhoods.yml",
                 "rules_key": "bronze_neighbourhoods",
                 "bronze_key": "neighbourhoods_bronze",
-                "control_key": "neighbourhoods_control",
             },
-            "airbnb_neighbourhoods_bronze_test",
-            "airbnb_neighbourhoods_ingestion_control_test",
+            "airbnb_neighbourhoods_bronze",
         ),
         (
             {
@@ -240,22 +169,36 @@ def test_spec_defaults():
                 "contract_path": "contracts/airbnb/bronze_neighbourhood_geometry.yml",
                 "rules_key": "bronze_neighbourhood_geometry",
                 "bronze_key": "neighbourhood_geometry_bronze",
-                "control_key": "neighbourhood_geometry_control",
             },
-            "airbnb_neighbourhood_geometry_bronze_test",
-            "airbnb_neighbourhood_geometry_ingestion_control_test",
+            "airbnb_neighbourhood_geometry_bronze",
         ),
     ],
 )
-def test_spec_resolver_keys_isolate_in_test_mode(
-    spec_kwargs, bronze_suffix, control_suffix
-):
+def test_spec_destinations_resolve_by_catalog(spec_kwargs, bronze_table):
+    """F07.4: test isolation is a separate catalog, same table names."""
     spec = BronzeDatasetSpec(**spec_kwargs)
 
-    assert resolve_table(spec.bronze_key, "test").endswith(bronze_suffix)
-    assert resolve_table(spec.control_key, "test").endswith(control_suffix)
-    assert resolve_table(spec.manifest_key, "test").endswith(
-        "source_file_manifest_test"
+    assert resolve_table(spec.bronze_key, "test") == (
+        f"trippilot_test.bronze.{bronze_table}"
+    )
+    assert resolve_table(spec.bronze_key, "live") == (
+        f"trippilot_dev.bronze.{bronze_table}"
+    )
+    assert resolve_table(spec.manifest_key, "test") == (
+        "trippilot_test.ops.source_file_manifest"
+    )
+    assert resolve_table(spec.manifest_key, "live") == (
+        "trippilot_dev.ops.source_file_manifest"
+    )
+
+
+def test_every_run_records_into_one_shared_ingestion_manifest():
+    """F07.4: ONE shared manifest table per environment, no suffixes."""
+    assert resolve_table("ingestion_manifest", "test") == (
+        "trippilot_test.ops.ingestion_manifest"
+    )
+    assert resolve_table("ingestion_manifest", "live") == (
+        "trippilot_dev.ops.ingestion_manifest"
     )
 
 
