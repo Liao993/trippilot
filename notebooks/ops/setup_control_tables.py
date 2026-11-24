@@ -60,6 +60,7 @@ from src.common.source_manifest_store import ManifestStore
 from src.common.table_setup import (
     ensure_catalog,
     ensure_operational_tables,
+    ensure_reserved_schemas,
     ensure_schemas,
 )
 
@@ -69,6 +70,12 @@ tables = resolve_tables(mode)
 print(f"Setting up TripPilot operational tables in {mode!r} mode")
 print(f"Catalog ensured: {ensure_catalog(spark, catalog_for(mode))}")
 print(f"Schemas ensured: {', '.join(ensure_schemas(spark, tables.values()))}")
+
+# F08 will rebuild the Silver stage from scratch. The empty silver
+# schema is reserved now - in this run mode's catalog - so the rebuild
+# lands in its documented home; no silver tables exist until then.
+reserved = ensure_reserved_schemas(spark, [f"{catalog_for(mode)}.silver"])
+print(f"Reserved schemas ensured: {', '.join(reserved)}")
 
 actions = ensure_operational_tables(spark, tables)
 for key, action in sorted(actions.items()):

@@ -36,6 +36,7 @@ from src.common.table_setup import (
     ensure_catalog,
     ensure_operational_table,
     ensure_operational_tables,
+    ensure_reserved_schemas,
     ensure_schemas,
     missing_columns,
 )
@@ -215,6 +216,17 @@ def test_ensure_schemas_creates_each_unique_schema_once():
 
     assert made == ["t.bronze", "t.ops", "t.reporting"]
     assert spark.calls == [f"CREATE SCHEMA IF NOT EXISTS {s}" for s in made]
+
+
+def test_ensure_reserved_schemas_creates_each_schema():
+    # F07.4: the empty silver schema is reserved (no tables, no
+    # resolver keys) until the F08 rebuild populates it.
+    spark = StubSpark()
+
+    ensured = ensure_reserved_schemas(spark, ["t.silver"])
+
+    assert ensured == ["t.silver"]
+    assert spark.calls == ["CREATE SCHEMA IF NOT EXISTS t.silver"]
 
 
 def test_operational_shapes_cover_expected_keys():

@@ -65,6 +65,7 @@ from src.common.environment import (
 from src.common.ingestion_manifest import IngestionManifestStore
 from src.common.provenance import build_provenance_columns, build_run_id
 from src.common.run_controls import (
+    _in_dataset_scope,
     decide_ingestion_action,
     latest_successful_source_file_id,
     record_control_failure,
@@ -248,9 +249,13 @@ def run_bronze_ingestion(
         force_reload=force_reload,
         dataset=dataset,
     )
+    dataset_controls = [
+        control for control in existing_controls if _in_dataset_scope(control, dataset)
+    ]
     print(
         f"Existing control records for {dataset}/{city}/{snapshot_date}: "
-        f"{len(existing_controls)}"
+        f"{len(dataset_controls)} in dataset scope "
+        f"({len(existing_controls)} manifest rows across datasets)"
     )
     print(f"Ingestion action: {ingestion_action}")
 
@@ -267,7 +272,9 @@ def run_bronze_ingestion(
     # Start the manifest row, linked to its exact source-file identity
     # and - when reprocessing a corrected file - the identity it replaced.
     run_id = run_id or build_run_id()
-    prior_source_file_id = latest_successful_source_file_id(existing_controls)
+    prior_source_file_id = latest_successful_source_file_id(
+        existing_controls, dataset=dataset
+    )
     started_at_utc = datetime.now(UTC).isoformat()
     manifest_store.start_run(
         {

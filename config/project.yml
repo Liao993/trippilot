@@ -6,6 +6,9 @@ databricks:
   catalog: trippilot_dev
   schemas:
     bronze: bronze
+    # Reserved and empty: the legacy Silver stage was fully retired in
+    # the F07.4 cleanup; F08 rebuilds the stage from scratch here.
+    silver: silver
     gold: gold
   volumes:
     source_files: /Volumes/trippilot_dev/bronze/source_files

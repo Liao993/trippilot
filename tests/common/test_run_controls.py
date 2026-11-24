@@ -379,6 +379,25 @@ def test_latest_successful_source_file_id_picks_newest_completed():
     assert latest_successful_source_file_id(controls) == "b" * 64
 
 
+def test_latest_successful_source_file_id_is_dataset_scoped():
+    # F07.4 regression: the unified manifest holds every dataset's rows
+    # for one slice - a calendar success must never become the listings
+    # reprocess link.
+    controls = [
+        _success_control(source_file_id="a" * 64, completed_at_utc="2026-11-13"),
+        {
+            "city": "toronto",
+            "status": "success",
+            "dataset": "calendar",
+            "source_file_id": "b" * 64,
+            "completed_at_utc": "2026-11-14",
+        },
+    ]
+
+    assert latest_successful_source_file_id(controls, dataset="listings") == "a" * 64
+    assert latest_successful_source_file_id(controls, dataset="calendar") == "b" * 64
+
+
 def test_latest_successful_source_file_id_returns_none_without_success():
     assert latest_successful_source_file_id([]) is None
     assert (

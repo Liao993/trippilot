@@ -175,6 +175,20 @@ def ensure_schemas(spark: Any, table_names: Iterable[str]) -> list[str]:
     return created
 
 
+def ensure_reserved_schemas(spark: Any, schemas: Iterable[str]) -> list[str]:
+    """CREATE SCHEMA IF NOT EXISTS for stage schemas with no tables yet.
+
+    Reserved schemas keep a future stage's documented home available -
+    e.g. the empty silver schema awaiting the F08 rebuild - without
+    any resolver keys or tables existing for that stage.
+    """
+    ensured: list[str] = []
+    for schema in schemas:
+        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+        ensured.append(schema)
+    return ensured
+
+
 _SAFE_CATALOG_NAME = re.compile(r"^[a-z0-9_]+$")
 
 
