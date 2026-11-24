@@ -5,11 +5,11 @@
 ## 1. Project Status
 
 - **Project:** TripPilot — AI-enabled travel discovery and planning platform
-- **Current phase:** Airbnb data platform — summary and neighbourhood Bronze ingestion completed
-- **Completed through:** F06.3, the pre-F07 cleanup (T01–T14), the post-cleanup verification audit, the listings control-table rename (R1, branch `chore/listings-control-rename`), the legacy control-table drop, live source-manifest registration and the first live calendar/reviews Bronze ingestion (2026-11-19), F07.1 summary/neighbourhood registration and F07.2 Bronze ingestion (2026-11-23, branch `feature/f07-2-bronze-ingestion`)
-- **Next task:** F07.3
-- **Roadmap:** Project Plan v31
-- **Build workflow:** Unified Build Guide v31
+- **Current phase:** Airbnb data platform — Bronze foundation complete (all seven products populated in both catalogs), stabilized for the F08 Silver rebuild
+- **Completed through:** F06.3, the pre-F07 cleanup (T01–T14), the post-cleanup verification audit, the listings control-table rename (R1, branch `chore/listings-control-rename`), the legacy control-table drop, live source-manifest registration and the first live calendar/reviews Bronze ingestion (2026-11-19), F07.1 summary/neighbourhood registration and F07.2 Bronze ingestion (2026-11-23, branch `feature/f07-2-bronze-ingestion`), F07.3 validation/rerun semantics and the availability ledger (branch `feature/f07-3-validation-rerun`), F07.4 test isolation and the unified ingestion manifest with its follow-ups (branch `feature/f07-4-test-isolation-manifest`), and the F07.5 exploration-stub retirement (2026-11-24, branch `chore/f07-5-retire-exploration-stubs`)
+- **Next task:** F08 — Silver rebuild from scratch on the unified architecture
+- **Roadmap:** Project Plan v32
+- **Build workflow:** Unified Build Guide v32
 
 ## 2. Completed Features
 
@@ -25,6 +25,9 @@
 | Pre-F07 cleanup — storage, code and data reconciliation | Complete | Shared Bronze flow (calendar/reviews notebooks thinned to 4 cells), standardized idempotent control-table setup, post-landing staging cleanup, duplicate retirement, live manifest created, 286 tests green |
 | F07.1 — Summary and neighbourhood registration | Complete | Plain-CSV and GeoJSON staged-content validation and inspection in acquisition, hash-versioned landing, four new identities registered in both test and live manifests (schema_versions reproduce the merged F07.1 guide's recorded values) |
 | F07.2 — Summary and neighbourhood Bronze | Complete | File-type dispatch in the shared Bronze flow (csv.gz/csv/geojson), one-row-per-feature GeoJSON ingestion with full geometry preserved as `geometry_json`, feature counts recorded and reconciled, four new Bronze products and control tables in test and live, 322 tests green |
+| F07.3 — Validation, failure and availability status | Complete | Evidence-backed `error_type` failure classification, sanitized error messages, the 18-field manifest contract evolved in place, and the identity-safe availability ledger (`ops.source_file_availability`) validated by runtime drills |
+| F07.4 — Test isolation and unified ingestion manifest | Complete | Dedicated `trippilot_test` catalog, one shared `ops.ingestion_manifest` per environment, legacy control/Silver-table retirement (26 tables dropped after history migration/archival), dataset-scoped reprocess links fixed, all seven Bronze products populated in both catalogs |
+| F07.5 — Exploration-stub retirement | Complete | Retired `notebooks/exploration/airbnb/` (inspect/preview stubs that hard-coded the retired root upload path); the supported acquisition and Bronze flow is unchanged; 359 tests, ruff format, config and notebook validation all pass |
 
 ## 3. Verified Airbnb Data State
 
@@ -73,12 +76,13 @@ Test and live destinations now come from the standardized, idempotent setup (`no
 
 **F07.4 follow-up 2: full test catalog, Silver schema reservation, reprocess-link fix (2026-11-24):** all seven Bronze data products were populated in `trippilot_test` through the shared flow (listings 22,050; listings_summary 22,050; reviews 729,202; reviews_summary 729,202; calendar 8,048,251; neighbourhoods 140; neighbourhood_geometry 140 rows), each recording a success row in the unified manifest. Populating them exposed a real F07.4 defect: `latest_successful_source_file_id` did not scope by dataset, so a run's `prior_source_file_id` (the audited reprocess link) was taken from whichever dataset loaded most recently — fixed with the same `_in_dataset_scope` rule the decision uses, applied in the helper, the shared flow and the legacy listings notebook (where a refactor-introduced variable typo was also fixed); the four wrong links in the test manifest were corrected to NULL. The listings contract gained the standard `row_validation` policy (required: `id`) so the dataset runs through the shared flow. Per operator decision the empty `silver` schema was restored in both catalogs while tables and stage code remain retired: `ensure_reserved_schemas` reserves it, the setup script creates it per run mode, and `config/project.yml` declares it. Gates: 359 tests, ruff format.
 
+**F07.5 exploration-stub retirement (2026-11-24, branch `chore/f07-5-retire-exploration-stubs`):** the two obsolete exploration stubs (`notebooks/exploration/airbnb/inspect_airbnb_source.ipynb`, `notebooks/exploration/airbnb/preview_airbnb_source.ipynb`) were retired after operator approval. Both hard-coded the retired root-upload path (`/Volumes/trippilot_dev/bronze/source_files/insideairbnb/toronto/listings.csv.gz`) — a second, unsupported source-reading path superseded by the acquisition flow and manifest-driven Bronze ingestion. A repository-wide reference audit found no code, test, documentation or workflow dependency on either notebook (notebook validation enumerates `notebooks/` dynamically), and the stubs held no unique logic or stored outputs (the identifier-quality checks are formalized in the contracts and quality validators), so nothing needed preservation. The now-empty `notebooks/exploration/` tree was removed with them. No production code, contracts, configuration or Databricks tables changed. Gates: 359 tests (including config and notebook validation), ruff format — all pass.
+
 ## 5. Outstanding Items
 
 - Verify the registered licence text (CC BY 4.0, chosen from the Project Plan v31 data-licence statement when the operator deferred confirmation) against the current official Inside Airbnb data policy; live manifest records are immutable, so a confirmed mismatch requires a documented remediation. This applies to the three 2026-11-19 records and the four 2026-11-23 records alike.
 - The four 2026-11-23 manifest records use `retrieved_at_utc` at date precision (`2026-11-23T00:00:00Z`): the exact download time was not recorded. Corrected-in-place metadata is impossible on immutable manifest records; if exact times are later needed, re-register from the immutable landed objects with a documented correction file.
 - F07.3's availability recording is a code-first API (`build_not_published_record` / `build_available_record` + `AvailabilityStore`); an operator-facing notebook surface is deferred to the multi-city feature that first needs it.
-- Decide the retirement of exploration stubs (`notebooks/exploration/`); they still reference the retired root upload paths.
 - `config/project.yml` still carries the legacy `file_format: csv_gzip` keys on the pre-F07 dataset entries (superseded by the manifest's `file_type`); F07.1 D2 left them untouched as out of scope.
 
 ## 6. Next Task
@@ -89,9 +93,10 @@ F07.4 (stabilization before F08) is complete as of 2026-11-23: a dedicated `trip
 
 F07 is complete as of 2026-11-23: all summary and neighbourhood assets are registered (7 landed immutable objects in the live manifest), ingested into their Bronze products with reconciled single-slice loads, and F07.3's status/recording semantics distinguish not-published (evidence-backed availability ledger), download/acquisition vs parse/schema failures (`error_type`) and Bronze validation failures (per-dataset control tables), with rerun/replacement behavior covered by tests.
 
-Carried-over operator items (not blocking F08):
+F07.5 (repository cleanup) is complete as of 2026-11-24: the two obsolete exploration stubs that hard-coded the retired root upload path were deleted after operator approval, closing the carried-over decision; the supported acquisition and Bronze ingestion workflow is unchanged and remains the only source-inspection path.
+
+Carried-over operator item (not blocking F08):
 
 1. Verify the registered licence text against the current official Inside Airbnb data policy (records are immutable; a confirmed mismatch requires a documented remediation).
-2. Decide the retirement of exploration stubs.
 
 Detailed implementation history, file hashes, schemas, run IDs, test drills and technical decisions are retained in feature documentation, GitHub PRs and Notion rather than duplicated here.
