@@ -59,9 +59,10 @@ def _airbnb_cities(project_config: Any) -> dict[str, Any]:
         raise TypeError("project_config must be a mapping")
     sources = project_config.get("sources")
     if not isinstance(sources, dict) or not isinstance(sources.get("airbnb"), dict):
-        raise ValueError(
-            "project_config is missing sources.airbnb; a city cannot be "
-            "selected without its dataset registration"
+        raise TypeError(
+            "project_config must map sources.airbnb to the city/dataset "
+            "registry; a city cannot be selected without its dataset "
+            "registration"
         )
     cities = sources["airbnb"].get("cities")
     if not isinstance(cities, dict) or not cities:
@@ -106,7 +107,7 @@ def list_city_datasets(project_config: Any, registry: Any) -> list[dict[str, Any
                     "expected one of: " + ", ".join(INGESTION_DATASETS)
                 )
             if not isinstance(dataset_config, dict):
-                raise ValueError(
+                raise TypeError(
                     f"city {city_id!r}/{dataset}: dataset configuration must "
                     "be a mapping"
                 )
@@ -156,7 +157,9 @@ def select_landed_source_file(
 
     city_config = _airbnb_cities(project_config).get(city_id)
     if not isinstance(city_config, dict):
-        raise ValueError(f"city {city_id!r} has no dataset registration in project.yml")
+        raise TypeError(
+            f"city {city_id!r} has no dataset registration mapping in project.yml"
+        )
     datasets = city_config.get("datasets")
     if not isinstance(datasets, dict) or dataset not in datasets:
         available = ", ".join(sorted(datasets)) if isinstance(datasets, dict) else ""

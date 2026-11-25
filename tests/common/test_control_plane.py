@@ -380,3 +380,21 @@ def test_select_requires_city_and_dataset_arguments():
 
     with pytest.raises(ValueError, match="dataset is required"):
         select_landed_source_file(store, _project(), REGISTRY, "toronto", "")
+
+
+def test_malformed_project_config_types_are_type_errors():
+    """Malformed config STRUCTURE is a TypeError; bad values stay ValueError."""
+    with pytest.raises(TypeError, match="sources.airbnb"):
+        list_city_datasets({"sources": "nope"}, REGISTRY)
+
+    project = _project()
+    project["sources"]["airbnb"]["cities"]["toronto"]["datasets"]["listings"] = "nope"
+    with pytest.raises(TypeError, match="dataset configuration must"):
+        list_city_datasets(project, REGISTRY)
+
+    project = _project()
+    project["sources"]["airbnb"]["cities"]["toronto"] = "nope"
+    with pytest.raises(TypeError, match="no dataset registration mapping"):
+        select_landed_source_file(
+            StubManifestStore(record=LANDED_RECORD), project, REGISTRY, "toronto", "listings"
+        )
