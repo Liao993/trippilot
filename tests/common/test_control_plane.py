@@ -396,5 +396,9 @@ def test_malformed_project_config_types_are_type_errors():
     project["sources"]["airbnb"]["cities"]["toronto"] = "nope"
     with pytest.raises(TypeError, match="no dataset registration mapping"):
         select_landed_source_file(
-            StubManifestStore(record=LANDED_RECORD), project, REGISTRY, "toronto", "listings"
+            StubManifestStore(record=LANDED_RECORD),
+            project,
+            REGISTRY,
+            "toronto",
+            "listings",
         )
