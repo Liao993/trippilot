@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.common.ingestion_manifest import INGESTION_DATASETS
 from src.common.provenance import build_run_id
 
 ALLOWED_PROCESSING_STATES = ("registered", "validated", "landed", "failed")
@@ -30,8 +31,9 @@ VALID_TRANSITIONS: dict[str, tuple[str, ...]] = {
 # structure) is a parse_or_schema failure; everything else on the
 # acquisition path (staging placement, landing copy, immutable-landing
 # conflicts) is an acquisition failure. Optional on failed records for
-# backward compatibility with pre-F07.3 history; Bronze-level validation
-# failures are recorded separately in the per-dataset control tables.
+# backward compatibility with pre-F07.3 history; Bronze-level load
+# failures are recorded separately in the unified ops.ingestion_manifest
+# (F07.4).
 ALLOWED_ERROR_TYPES = ("acquisition", "parse_or_schema")
 SUPPORTED_FILE_TYPES = ("csv", "csv.gz", "tsv", "json", "geojson", "zip", "parquet")
 DEFAULT_MAX_BYTE_SIZE = 2 * 1024**3  # 2 GiB
@@ -172,6 +174,16 @@ def validate_source_metadata(
         errors.append(
             f"Unsupported file type {file_type!r}; expected one of: "
             + ", ".join(SUPPORTED_FILE_TYPES)
+        )
+
+    # F08.4: the optional dataset tag links the file to its ingestion
+    # dataset so city/dataset slices resolve unambiguously; when present
+    # it must be a controlled tag (pre-F08.4 history carries none).
+    dataset = record.get("dataset")
+    if _is_nonempty_string(dataset) and dataset not in INGESTION_DATASETS:
+        errors.append(
+            f"Invalid dataset {dataset!r}; expected one of: "
+            + ", ".join(INGESTION_DATASETS)
         )
 
     source_url = record.get("source_url")

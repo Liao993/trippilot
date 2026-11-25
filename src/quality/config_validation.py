@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from src.common.city_registry import find_registry_problems
+from src.common.source_manifest import SUPPORTED_FILE_TYPES
 from src.quality.contract_loader import get_table_rules, load_contract
 
 # The populated files this validation covers, mapped to their validators.
@@ -61,6 +63,88 @@ def _is_nonempty_string_list(value: Any) -> bool:
     )
 
 
+def _validate_sources_section(sources: dict[str, Any], label: str) -> list[str]:
+    """Check the per-family city/dataset source registry (F08.2).
+
+    City keys are immutable city_ids registered in
+    config/city_registry.yml (cross-checked separately in
+    validate_config_files, which sees both files). City enablement is
+    owned by the registry, so an 'enabled' flag here is an error.
+    """
+    errors: list[str] = []
+    for family_name, family in sources.items():
+        family_label = f"{label}: sources.{family_name}"
+        if not isinstance(family, dict):
+            errors.append(f"{family_label} must be a mapping")
+            continue
+        if not _is_nonempty_string(family.get("provider")):
+            errors.append(f"{family_label}.provider must be a non-empty string")
+        source_url = family.get("source_url")
+        if not _is_nonempty_string(source_url) or not str(source_url).startswith(
+            ("https://", "http://")
+        ):
+            errors.append(
+                f"{family_label}.source_url must be an official https:// or http:// URL"
+            )
+        cities = family.get("cities")
+        if not isinstance(cities, dict) or len(cities) == 0:
+            errors.append(
+                f"{family_label}.cities must be a non-empty mapping keyed by "
+                "registered city_id"
+            )
+            continue
+        for city_id, city in cities.items():
+            city_label = f"{family_label}.cities.{city_id}"
+            if not isinstance(city, dict):
+                errors.append(f"{city_label} must be a mapping")
+                continue
+            if "enabled" in city:
+                errors.append(
+                    f"{city_label}: city enablement lives ONLY in "
+                    "config/city_registry.yml; remove the 'enabled' flag "
+                    "from project.yml"
+                )
+            datasets = city.get("datasets")
+            if not isinstance(datasets, dict) or len(datasets) == 0:
+                errors.append(
+                    f"{city_label}.datasets must be a non-empty mapping of "
+                    "controlled dataset tags"
+                )
+                continue
+            for dataset, spec in datasets.items():
+                dataset_label = f"{city_label}.datasets.{dataset}"
+                if not isinstance(spec, dict):
+                    errors.append(f"{dataset_label} must be a mapping")
+                    continue
+                if not _is_nonempty_string(spec.get("file")):
+                    errors.append(f"{dataset_label}.file must be a non-empty string")
+                file_type = spec.get("file_type")
+                if (
+                    not _is_nonempty_string(file_type)
+                    or str(file_type) not in SUPPORTED_FILE_TYPES
+                ):
+                    errors.append(
+                        f"{dataset_label}.file_type must be one of the "
+                        f"supported file types {SUPPORTED_FILE_TYPES}"
+                    )
+                if not _is_nonempty_string(spec.get("required_identifier")):
+                    errors.append(
+                        f"{dataset_label}.required_identifier must be a "
+                        "non-empty string"
+                    )
+                if (
+                    _is_nonempty_string(spec.get("file"))
+                    and _is_nonempty_string(file_type)
+                    and str(file_type) in SUPPORTED_FILE_TYPES
+                    and not str(spec["file"]).endswith(f".{file_type}")
+                ):
+                    errors.append(
+                        f"{dataset_label}.file {spec['file']!r} does not end "
+                        f"with the declared file_type {file_type!r}"
+                    )
+    return errors
+
+
 def validate_project_config(
     content: dict[str, Any],
     label: str = "config/project.yml",
@@ -87,7 +171,44 @@ def validate_project_config(
     sources = content.get("sources")
     if not isinstance(sources, dict) or len(sources) == 0:
         errors.append(f"{label}: 'sources' must be a non-empty mapping")
+    else:
+        errors.extend(_validate_sources_section(sources, label))
 
+    return errors
+
+
+def validate_source_city_registration(
+    project_content: dict[str, Any],
+    registry_content: dict[str, Any],
+    label: str = "config/project.yml",
+    registry_label: str = "config/city_registry.yml",
+) -> list[str]:
+    """Cross-check project.yml source cities against the registry (F08.2).
+
+    Every sources.<family>.cities key must be an immutable city_id
+    registered in config/city_registry.yml; a city that is only in
+    project.yml can never be ingested, and its datasets would silently
+    detach from the registry's enablement and metadata.
+    """
+    errors: list[str] = []
+    cities = registry_content.get("cities")
+    registered = {
+        entry.get("city_id")
+        for entry in (cities or [])
+        if isinstance(entry, dict) and _is_nonempty_string(entry.get("city_id"))
+    }
+    sources = project_content.get("sources")
+    if not isinstance(sources, dict):
+        return errors
+    for family_name, family in sources.items():
+        if not isinstance(family, dict) or not isinstance(family.get("cities"), dict):
+            continue
+        for city_id in family["cities"]:
+            if city_id not in registered:
+                errors.append(
+                    f"{label}: sources.{family_name}.cities.{city_id} is not a "
+                    f"city_id registered in {registry_label}"
+                )
     return errors
 
 
@@ -95,25 +216,13 @@ def validate_city_registry(
     content: dict[str, Any],
     label: str = "config/city_registry.yml",
 ) -> list[str]:
-    """Check the cities list of city_registry.yml."""
-    errors: list[str] = []
+    """Check the stable city registry (F08.1) entry rules.
 
-    cities = content.get("cities")
-    if not isinstance(cities, list) or len(cities) == 0:
-        errors.append(f"{label}: 'cities' must be a non-empty list")
-        return errors
-
-    for index, entry in enumerate(cities):
-        entry_label = f"{label}: cities[{index}]"
-        if not isinstance(entry, dict):
-            errors.append(f"{entry_label} must be a mapping")
-            continue
-        if not _is_nonempty_string(entry.get("city")):
-            errors.append(f"{entry_label}: 'city' must be a non-empty string")
-        if not isinstance(entry.get("enabled"), bool):
-            errors.append(f"{entry_label}: 'enabled' must be a boolean")
-
-    return errors
+    The structural definition of a well-formed registry entry lives in
+    src.common.city_registry.find_registry_problems so the runtime
+    control plane and CI validation enforce one shared definition.
+    """
+    return [f"{label}: {problem}" for problem in find_registry_problems(content)]
 
 
 def validate_bronze_contract(
@@ -203,7 +312,15 @@ MANIFEST_REQUIRED_FIELDS = (
     "run_id",
     "processing_state",
 )
-MANIFEST_OPTIONAL_FIELDS = ("landing_path", "error_message")
+# Optional manifest fields, cross-checked against the contract: the
+# dataset tag (F08.4) and the classified failure reason (F07.3-T01)
+# join the optional operational fields; all must stay required: false.
+MANIFEST_OPTIONAL_FIELDS = (
+    "dataset",
+    "landing_path",
+    "error_message",
+    "error_type",
+)
 MANIFEST_CONTROLLED_STATES = ("registered", "validated", "landed", "failed")
 
 
@@ -304,6 +421,7 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
     """
     root = Path(repo_root) if repo_root is not None else Path.cwd()
     errors: list[str] = []
+    parsed_by_kind: dict[str, dict[str, Any]] = {}
 
     for rel_path, kind in CONFIG_FILES.items():
         label = rel_path
@@ -325,6 +443,9 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
             errors.append(f"{label}: file is empty; a populated mapping is required")
             continue
 
+        if kind in ("project", "city_registry"):
+            parsed_by_kind[kind] = content
+
         if kind == "bronze_contract":
             errors.extend(
                 validate_bronze_contract(
@@ -333,6 +454,13 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
             )
         else:
             errors.extend(VALIDATORS[kind](content, label))
+
+    if "project" in parsed_by_kind and "city_registry" in parsed_by_kind:
+        errors.extend(
+            validate_source_city_registration(
+                parsed_by_kind["project"], parsed_by_kind["city_registry"]
+            )
+        )
 
     if errors:
         raise ValueError(

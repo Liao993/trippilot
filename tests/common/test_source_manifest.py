@@ -323,6 +323,18 @@ def test_error_type_must_use_the_controlled_vocabulary():
     assert ALLOWED_ERROR_TYPES == ("acquisition", "parse_or_schema")
 
 
+def test_dataset_tag_must_use_the_controlled_vocabulary():
+    # F08.4: a controlled tag is accepted, an arbitrary string refused.
+    record = _built_record()
+    record["dataset"] = "listings"
+
+    assert not any("Invalid dataset" in e for e in validate_source_metadata(record))
+
+    record["dataset"] = "random_tag"
+
+    assert any("Invalid dataset" in e for e in validate_source_metadata(record))
+
+
 def test_failed_transition_records_the_error_type():
     record = _built_record()
 
@@ -391,5 +403,5 @@ def test_yaml_contract_matches_the_module_rules():
     }
     for field in REQUIRED_RECORD_FIELDS:
         assert contract["fields"][field]["required"] is True
-    for optional in ["landing_path", "error_message", "error_type"]:
+    for optional in ["dataset", "landing_path", "error_message", "error_type"]:
         assert contract["fields"][optional]["required"] is False

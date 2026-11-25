@@ -27,13 +27,15 @@ from src.common.table_setup import build_add_columns_sql
 MANIFEST_TABLE = "trippilot_dev.ops.source_file_manifest"
 
 # Contract field order: source identity, metadata, operational fields.
-# error_type (F07.3-T01) is the optional classified failure reason.
+# dataset (F08.4) is the optional city/dataset tag; error_type
+# (F07.3-T01) is the optional classified failure reason.
 MANIFEST_FIELDS: tuple[str, ...] = (
     "source_file_id",
     "source_family",
     "source_entity_id",
     "source_version",
     "file_type",
+    "dataset",
     "source_url",
     "retrieved_at_utc",
     "file_hash_sha256",
@@ -54,8 +56,11 @@ MANIFEST_COLUMN_TYPES: dict[str, str] = {
     field: ("BIGINT" if field == "byte_size" else "STRING") for field in MANIFEST_FIELDS
 }
 
-# Columns that may hold NULL: the optional operational fields.
-NULLABLE_FIELDS = ("landing_path", "error_message", "error_type")
+# Columns that may hold NULL. dataset (F08.4) is nullable only so a
+# pre-F08.4 table can evolve in place; records acquired after F08.4
+# carry it, and pre-F08.4 history is corrected through a documented
+# data correction.
+NULLABLE_FIELDS = ("dataset", "landing_path", "error_message", "error_type")
 
 # Only the operational state of the latest attempt may change after a
 # row exists. Everything else is immutable in the table.
@@ -174,9 +179,10 @@ class ManifestStore:
 
         CREATE TABLE IF NOT EXISTS only fills gaps. An existing table
         (for example the live manifest created before F07.3) is evolved
-        forward with ALTER ADD COLUMNS - here adding the error_type
-        column - without touching any existing row, mirroring the
-        shared operational-table evolution in src/common/table_setup.
+        forward with ALTER ADD COLUMNS - here adding the dataset (F08.4)
+        and error_type columns - without touching any existing row,
+        mirroring the shared operational-table evolution in
+        src/common/table_setup.
         """
         spark = self._require_spark()
         spark.sql(build_create_table_sql(self.table_name))
@@ -292,6 +298,66 @@ class ManifestStore:
             raise ValueError(
                 f"{identity}: {len(rows)} landed manifest records found "
                 f"({ids}); pass an explicit source_file_id to choose one"
+            )
+        record = _row_to_dict(rows[0])
+        landing_path = record.get("landing_path")
+        if not isinstance(landing_path, str) or not landing_path.strip():
+            raise ValueError(
+                f"{record.get('source_file_id')}: landed manifest record has no "
+                "landing_path"
+            )
+        return record
+
+    def read_landed_by_dataset(
+        self,
+        source_entity_id: str,
+        dataset: str,
+        source_version: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the single landed manifest row for one city/dataset (F08.4).
+
+        The control plane resolves a dataset's exact landed object by
+        city_id + dataset tag (plus an optional source_version), never
+        from a configured path: snapshot identities are manifest state.
+        Exactly one landed row must match; ambiguity (several snapshot
+        dates or hash versions landed for the same slice) is an operator
+        decision - this method never guesses.
+        """
+        for name, value in (
+            ("source_entity_id", source_entity_id),
+            ("dataset", dataset),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} is required to resolve a manifest record")
+        if source_version is not None and (
+            not isinstance(source_version, str) or not source_version.strip()
+        ):
+            raise ValueError("source_version must be a non-empty string when given")
+        slice_label = f"{source_entity_id}/{dataset}"
+        if source_version is not None:
+            slice_label += f"@{source_version}"
+        columns = ", ".join(MANIFEST_FIELDS)
+        sql = (
+            f"SELECT {columns} FROM {self.table_name} "
+            f"WHERE source_entity_id = {_sql_literal(source_entity_id)} "
+            f"AND dataset = {_sql_literal(dataset)} "
+            "AND processing_state = 'landed'"
+        )
+        if source_version is not None:
+            sql += f" AND source_version = {_sql_literal(source_version)}"
+        rows = self._require_spark().sql(sql).collect()
+        if not rows:
+            raise ValueError(
+                f"{slice_label}: no landed manifest record found in {self.table_name}"
+            )
+        if len(rows) > 1:
+            ids = ", ".join(
+                _row_to_dict(row).get("source_file_id", "?") for row in rows
+            )
+            raise ValueError(
+                f"{slice_label}: {len(rows)} landed manifest records found "
+                f"({ids}); pass an explicit source_version or source_file_id "
+                "to choose one"
             )
         record = _row_to_dict(rows[0])
         landing_path = record.get("landing_path")

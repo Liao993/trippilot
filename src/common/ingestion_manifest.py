@@ -54,7 +54,9 @@ INGESTION_DATASETS: tuple[str, ...] = (
 
 # Controlled load lifecycle. not_published/not_available is a SOURCE
 # property recorded in the availability ledger (F07.3), never a load
-# status: a load that never started leaves no row here.
+# status: a load that never started leaves no row here. F08.3 state
+# model: `pending` is derived from the absence of a row (coverage
+# reporting only); running/success/failed stay the stored lifecycle.
 INGESTION_STATUSES: tuple[str, ...] = ("running", "success", "failed")
 
 # A manifest row is terminal once success/failed; only a running row
@@ -247,6 +249,29 @@ def build_manifest_read_sql(
     )
 
 
+def build_manifest_list_city_dataset_sql(
+    manifest_table: str,
+    *,
+    city: str,
+    dataset: str,
+) -> str:
+    """Return the SELECT of every manifest row for one city/dataset (F08.6).
+
+    Coverage reporting derives a slice's latest load status from these
+    rows; `pending` itself is derived from their absence and is never
+    a stored status.
+    """
+    _validate_table_name(manifest_table)
+    validate_dataset(dataset)
+    if not isinstance(city, str) or not city.strip():
+        raise ValueError("city is required to read a city/dataset slice")
+    return (
+        f"SELECT * FROM {manifest_table} "
+        f"WHERE city = {sql_string_literal(city)} "
+        f"AND dataset = {sql_string_literal(dataset)}"
+    )
+
+
 class IngestionManifestStore:
     """Thin Spark-injected repository over one environment's manifest.
 
@@ -319,6 +344,19 @@ class IngestionManifestStore:
             .sql(
                 build_manifest_read_sql(
                     self.table_name, city=city, snapshot_date=snapshot_date
+                )
+            )
+            .collect()
+        )
+        return [row.asDict() for row in rows]
+
+    def list_for_city_dataset(self, city: str, dataset: str) -> list[dict[str, Any]]:
+        """Return every manifest row for the city/dataset as dicts (F08.6)."""
+        rows = (
+            self._require_spark()
+            .sql(
+                build_manifest_list_city_dataset_sql(
+                    self.table_name, city=city, dataset=dataset
                 )
             )
             .collect()

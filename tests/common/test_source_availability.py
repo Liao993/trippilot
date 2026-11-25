@@ -37,6 +37,7 @@ from src.common.source_availability import (
     build_availability_id,
     build_available_record,
     build_create_table_sql,
+    build_invalid_record,
     build_not_published_record,
     build_upsert_sql,
     validate_availability_record,
@@ -53,6 +54,7 @@ IDENTITY = {
     "source_entity_id": "hamburg",
     "source_version": "2026-10-18",
     "file_type": "geojson",
+    "dataset": "neighbourhood_geometry",
 }
 
 
@@ -63,6 +65,7 @@ def _landed_manifest_row(**overrides):
         "source_entity_id": "hamburg",
         "source_version": "2026-10-18",
         "file_type": "geojson",
+        "dataset": "neighbourhood_geometry",
         "processing_state": "landed",
         "landing_path": "/Volumes/dev/bronze/x.geojson",
     }
@@ -105,12 +108,21 @@ class StubSpark:
 
 
 def test_availability_id_is_deterministic_and_identity_scoped():
-    first = build_availability_id("insideairbnb", "hamburg", "2026-10-18", "geojson")
-    second = build_availability_id("insideairbnb", "hamburg", "2026-10-18", "geojson")
+    first = build_availability_id(
+        "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
+    )
+    second = build_availability_id(
+        "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
+    )
 
     assert first == second
     assert first != build_availability_id(
-        "insideairbnb", "hamburg", "2026-10-18", "csv"
+        "insideairbnb", "hamburg", "2026-10-18", "csv", "listings"
+    )
+    # F08.3: the dataset completes the identity - two assets sharing a
+    # file type (listings/calendar/reviews are all csv.gz) stay distinct.
+    assert first != build_availability_id(
+        "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhoods"
     )
 
 
@@ -121,7 +133,7 @@ def test_availability_id_can_never_equal_a_manifest_id():
         "insideairbnb", "hamburg", "2026-10-18", "geojson", "f" * 64
     )
     ledger_id = build_availability_id(
-        "insideairbnb", "hamburg", "2026-10-18", "geojson"
+        "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
     )
 
     assert manifest_id != ledger_id
@@ -149,7 +161,7 @@ def test_not_published_record_builds_a_complete_valid_record():
     assert record["availability_state"] == "not_published"
     assert record["landed_source_file_id"] is None
     assert record["availability_id"] == build_availability_id(
-        "insideairbnb", "hamburg", "2026-10-18", "geojson"
+        "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
     )
     assert validate_availability_record(record) == []
 
@@ -184,6 +196,66 @@ def test_not_published_note_redacts_credentials():
 
     assert "dapi0123456789abcdef0123456789abcd" not in record["evidence_note"]
     assert "***REDACTED***" in record["evidence_note"]
+
+
+def test_invalid_record_requires_evidence():
+    with pytest.raises(ValueError, match="evidence_url is required"):
+        build_invalid_record(
+            IDENTITY, "", "header check failed", CHECKED_AT, "operator"
+        )
+
+    with pytest.raises(ValueError, match="evidence_note is required"):
+        build_invalid_record(IDENTITY, EVIDENCE_URL, "", CHECKED_AT, "operator")
+
+
+def test_invalid_record_builds_a_complete_valid_record():
+    record = build_invalid_record(
+        IDENTITY,
+        EVIDENCE_URL,
+        "downloaded geojson is not a FeatureCollection; the manifest records "
+        "the parse_or_schema failure",
+        CHECKED_AT,
+        "operator",
+    )
+
+    assert record["availability_state"] == "invalid"
+    assert record["landed_source_file_id"] is None
+    assert record["availability_id"] == build_availability_id(
+        "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
+    )
+    assert validate_availability_record(record) == []
+
+
+def test_invalid_record_is_allowed_when_bytes_exist():
+    # Unlike not_published, an invalid claim is not contradicted by
+    # acquired or failed bytes; the failed attempt's history stays in
+    # the source manifest, so no landed-refusal guard applies.
+    store = StubManifestStore(landed_by_identity=_landed_manifest_row())
+
+    record = build_invalid_record(
+        IDENTITY, EVIDENCE_URL, "header check failed", CHECKED_AT, "operator", store
+    )
+
+    assert record["availability_state"] == "invalid"
+
+
+def test_invalid_record_cannot_carry_a_landed_id():
+    record = build_invalid_record(
+        IDENTITY, EVIDENCE_URL, "header check failed", CHECKED_AT, "operator"
+    )
+    record["landed_source_file_id"] = "e" * 64
+
+    errors = validate_availability_record(record)
+
+    assert any(
+        "landed_source_file_id is not allowed when availability_state is invalid"
+        in error
+        for error in errors
+    )
+
+
+def test_invalid_is_an_allowed_availability_state():
+    assert "invalid" in ALLOWED_AVAILABILITY_STATES
 
 
 def test_available_record_requires_a_landed_manifest_id():
@@ -225,15 +297,36 @@ def test_available_record_rejects_an_identity_mismatch():
         build_available_record(wrong_identity, "e" * 64, CHECKED_AT, "operator", store)
 
 
+def test_available_record_accepts_an_untagged_legacy_landed_row():
+    # A pre-F08.4 landed manifest row carries no dataset tag; the
+    # identity comparison must skip the dataset only for that legacy
+    # shape, not weaken the other identity fields.
+    store = StubManifestStore(rows_by_id={"e" * 64: _landed_manifest_row(dataset=None)})
+
+    record = build_available_record(IDENTITY, "e" * 64, CHECKED_AT, "operator", store)
+
+    assert record["availability_state"] == "available"
+
+
+def test_available_record_rejects_a_dataset_mismatch():
+    store = StubManifestStore(
+        rows_by_id={"e" * 64: _landed_manifest_row(dataset="neighbourhoods")}
+    )
+
+    with pytest.raises(ValueError, match="identity does not match"):
+        build_available_record(IDENTITY, "e" * 64, CHECKED_AT, "operator", store)
+
+
 def test_validation_rejects_bad_states_types_and_timestamps():
     base = {
         "availability_id": build_availability_id(
-            "insideairbnb", "hamburg", "2026-10-18", "geojson"
+            "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
         ),
         "source_family": "insideairbnb",
         "source_entity_id": "hamburg",
         "source_version": "2026-10-18",
         "file_type": "geojson",
+        "dataset": "neighbourhood_geometry",
         "availability_state": "not_published",
         "evidence_url": EVIDENCE_URL,
         "evidence_note": "checked manually",
@@ -252,6 +345,7 @@ def test_validation_rejects_bad_states_types_and_timestamps():
         ("evidence_url", "ftp://example.com", "evidence_url must start with"),
         ("availability_id", "f" * 64, "availability_id must equal"),
         ("landed_source_file_id", "zz" * 32, "landed_source_file_id must be"),
+        ("dataset", "", "Missing required availability field: dataset"),
     ):
         record = dict(base)
         record[field] = bad
@@ -262,12 +356,13 @@ def test_validation_rejects_bad_states_types_and_timestamps():
 def test_not_published_cannot_carry_a_landed_id():
     record = {
         "availability_id": build_availability_id(
-            "insideairbnb", "hamburg", "2026-10-18", "geojson"
+            "insideairbnb", "hamburg", "2026-10-18", "geojson", "neighbourhood_geometry"
         ),
         "source_family": "insideairbnb",
         "source_entity_id": "hamburg",
         "source_version": "2026-10-18",
         "file_type": "geojson",
+        "dataset": "neighbourhood_geometry",
         "availability_state": "not_published",
         "evidence_url": EVIDENCE_URL,
         "evidence_note": "checked manually",
@@ -290,6 +385,7 @@ def test_create_table_sql_matches_the_contract_shape():
     for field in AVAILABILITY_FIELDS:
         assert f"{field} STRING" in sql
     assert "availability_id STRING NOT NULL" in sql
+    assert "dataset STRING NOT NULL" in sql
     assert "evidence_url STRING" in sql
     assert "evidence_url STRING NOT NULL" not in sql
     assert "evidence_note STRING NOT NULL" not in sql
@@ -374,7 +470,13 @@ def test_store_read_returns_the_stored_row_or_none():
 
     assert store.read(record["availability_id"]) == record
     assert (
-        store.read_by_identity("insideairbnb", "hamburg", "2026-10-18", "geojson")
+        store.read_by_identity(
+            "insideairbnb",
+            "hamburg",
+            "2026-10-18",
+            "geojson",
+            "neighbourhood_geometry",
+        )
         == record
     )
 
@@ -410,6 +512,49 @@ def test_store_ensure_table_creates_and_only_evolves_when_columns_are_missing():
     alter_statements = [sql for sql in spark.sql_log if sql.startswith("ALTER")]
     assert len(alter_statements) == 1
     assert "recorded_by STRING" in alter_statements[0]
+
+
+def test_list_by_city_dataset_scopes_the_slice_and_returns_row_dicts():
+    spark = StubSpark(
+        rows=[
+            {
+                "availability_id": build_availability_id(
+                    "insideairbnb",
+                    "toronto",
+                    "2026-09-16",
+                    "csv.gz",
+                    "listings",
+                ),
+                "availability_state": "available",
+                "dataset": "listings",
+            }
+        ]
+    )
+    store = AvailabilityStore(table_name=TEST_TABLE, spark=spark)
+
+    rows = store.list_by_city_dataset("toronto", "listings")
+
+    assert rows == [
+        {
+            "availability_id": build_availability_id(
+                "insideairbnb", "toronto", "2026-09-16", "csv.gz", "listings"
+            ),
+            "availability_state": "available",
+            "dataset": "listings",
+        }
+    ]
+    assert "WHERE source_entity_id = 'toronto'" in spark.sql_log[0]
+    assert "AND dataset = 'listings'" in spark.sql_log[0]
+
+
+def test_list_by_city_dataset_requires_both_scope_arguments():
+    store = AvailabilityStore(table_name=TEST_TABLE, spark=StubSpark(rows=[]))
+
+    with pytest.raises(ValueError, match="source_entity_id is required"):
+        store.list_by_city_dataset("", "listings")
+
+    with pytest.raises(ValueError, match="dataset is required"):
+        store.list_by_city_dataset("toronto", " ")
 
 
 def test_yaml_contract_matches_the_module_rules():
