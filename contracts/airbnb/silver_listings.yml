@@ -1,0 +1,490 @@
+silver_listings:
+  version: 1
+  # F09.1: versioned contract for the normalized detailed-listings Silver
+  # product. Bronze stays source-faithful (raw strings, row-quality
+  # annotations, landed provenance); this contract is the analytical
+  # interface: grain, composite key, standardized names, explicit types
+  # and deterministic parsing for every column, with lineage retained
+  # so each row traces back to its source file and ingestion run.
+  table: trippilot_dev.silver.airbnb_listings_silver
+  input: bronze_listings
+  grain: one source listing observation per (city_id, snapshot_date, listing_id)
+  primary_key:
+    - city_id
+    - snapshot_date
+    - listing_id
+  # The key is DECLARED, not enforced: F09.1 preserves every Bronze row
+  # (including duplicates and Bronze-invalid rows); uniqueness
+  # enforcement, exclusions and rejected-record handling belong to
+  # F09.2/F09.3.
+  write_policy: replace_city_snapshot
+  currency_source: city_registry
+  columns:
+    # --- identity ---------------------------------------------------------
+    - name: listing_id
+      source: id
+      type: string
+      nullable: false
+      note: source listing identifier; kept string (values exceed int32); required by the Bronze row-quality policy
+    - name: listing_url
+      source: listing_url
+      type: string
+      nullable: true
+    - name: scrape_id
+      source: scrape_id
+      type: string
+      nullable: true
+      note: scrape identity (e.g. 20260916052317); kept string as an identifier
+    # --- scrape metadata --------------------------------------------------
+    - name: scrape_source
+      source: source
+      type: string
+      nullable: true
+      note: the file's own 'source' marker ('previous scrape'); renamed to avoid colliding with the provider lineage field source_name
+    - name: last_scraped
+      source: last_scraped
+      type: date
+      nullable: true
+    - name: calendar_last_scraped
+      source: calendar_last_scraped
+      type: date
+      nullable: true
+    # --- listing content --------------------------------------------------
+    - name: name
+      source: name
+      type: string
+      nullable: true
+    - name: description
+      source: description
+      type: string
+      nullable: true
+    - name: neighborhood_overview
+      source: neighborhood_overview
+      type: string
+      nullable: true
+    - name: picture_url
+      source: picture_url
+      type: string
+      nullable: true
+    - name: property_type
+      source: property_type
+      type: string
+      nullable: true
+    - name: room_type
+      source: room_type
+      type: string
+      nullable: true
+    - name: amenities
+      source: amenities
+      type: string
+      nullable: true
+      note: JSON array string preserved verbatim; array parsing is a later feature's decision
+    - name: license
+      source: license
+      type: string
+      nullable: true
+    # --- host facts --------------------------------------------------------
+    - name: host_id
+      source: host_id
+      type: string
+      nullable: true
+    - name: host_url
+      source: host_url
+      type: string
+      nullable: true
+    - name: host_profile_id
+      source: host_profile_id
+      type: string
+      nullable: true
+    - name: host_profile_url
+      source: host_profile_url
+      type: string
+      nullable: true
+    - name: host_name
+      source: host_name
+      type: string
+      nullable: true
+    - name: host_since
+      source: host_since
+      type: date
+      nullable: true
+    - name: hosts_time_as_user_years
+      source: hosts_time_as_user_years
+      type: int
+      nullable: true
+    - name: hosts_time_as_user_months
+      source: hosts_time_as_user_months
+      type: int
+      nullable: true
+    - name: hosts_time_as_host_years
+      source: hosts_time_as_host_years
+      type: int
+      nullable: true
+    - name: hosts_time_as_host_months
+      source: hosts_time_as_host_months
+      type: int
+      nullable: true
+    - name: host_location
+      source: host_location
+      type: string
+      nullable: true
+    - name: host_about
+      source: host_about
+      type: string
+      nullable: true
+    - name: host_response_time
+      source: host_response_time
+      type: string
+      nullable: true
+    - name: host_response_rate
+      source: host_response_rate
+      type: int
+      parse: percent
+      nullable: true
+      note: percent 0-100; '%' stripped, never a fraction
+    - name: host_acceptance_rate
+      source: host_acceptance_rate
+      type: int
+      parse: percent
+      nullable: true
+      note: percent 0-100; '%' stripped, never a fraction
+    - name: host_is_superhost
+      source: host_is_superhost
+      type: boolean
+      nullable: true
+    - name: host_thumbnail_url
+      source: host_thumbnail_url
+      type: string
+      nullable: true
+    - name: host_picture_url
+      source: host_picture_url
+      type: string
+      nullable: true
+    - name: host_neighbourhood
+      source: host_neighbourhood
+      type: string
+      nullable: true
+    - name: host_listings_count
+      source: host_listings_count
+      type: int
+      nullable: true
+    - name: host_total_listings_count
+      source: host_total_listings_count
+      type: int
+      nullable: true
+    - name: host_verifications
+      source: host_verifications
+      type: string
+      nullable: true
+      note: literal source strings (including 'None'); never parsed as JSON
+    - name: host_has_profile_pic
+      source: host_has_profile_pic
+      type: boolean
+      nullable: true
+    - name: host_identity_verified
+      source: host_identity_verified
+      type: boolean
+      nullable: true
+    - name: calculated_host_listings_count
+      source: calculated_host_listings_count
+      type: int
+      nullable: true
+    - name: calculated_host_listings_count_entire_homes
+      source: calculated_host_listings_count_entire_homes
+      type: int
+      nullable: true
+    - name: calculated_host_listings_count_private_rooms
+      source: calculated_host_listings_count_private_rooms
+      type: int
+      nullable: true
+    - name: calculated_host_listings_count_shared_rooms
+      source: calculated_host_listings_count_shared_rooms
+      type: int
+      nullable: true
+    # --- location ---------------------------------------------------------
+    - name: neighbourhood
+      source: neighbourhood
+      type: string
+      nullable: true
+    - name: neighbourhood_cleansed
+      source: neighbourhood_cleansed
+      type: string
+      nullable: true
+    - name: neighbourhood_group_cleansed
+      source: neighbourhood_group_cleansed
+      type: string
+      nullable: true
+      note: empty in this snapshot but a real source field (populated in other cities); retained
+    - name: latitude
+      source: latitude
+      type: decimal(9,6)
+      nullable: true
+    - name: longitude
+      source: longitude
+      type: decimal(9,6)
+      nullable: true
+    # --- property capacity -------------------------------------------------
+    - name: accommodates
+      source: accommodates
+      type: int
+      nullable: true
+    - name: bathrooms_text
+      source: bathrooms_text
+      type: string
+      nullable: true
+      note: the numeric source column 'bathrooms' is excluded - see exclusions
+    - name: bedrooms
+      source: bedrooms
+      type: int
+      nullable: true
+    - name: beds
+      source: beds
+      type: int
+      nullable: true
+    # --- price ------------------------------------------------------------
+    - name: price
+      source: price
+      type: decimal(10,2)
+      parse: money
+      nullable: true
+      note: nightly listed amount in the city's registered currency; '$' and thousands separators stripped; no FX conversion
+    - name: currency
+      from: city_registry
+      type: string
+      nullable: false
+      note: registered city currency (toronto -> CAD); never parsed from the source, never converted
+    - name: price_quote_checkin_date
+      source: price_quote_checkin_date
+      type: date
+      nullable: true
+    - name: price_quote_checkout_date
+      source: price_quote_checkout_date
+      type: date
+      nullable: true
+    - name: price_quote_total_price
+      source: price_quote_total_price
+      type: string
+      nullable: true
+      note: arbitrary-precision source string retained verbatim (up to 26 decimals); the rounded quote lives inside price_quote_raw
+    - name: price_quote_price_per_night
+      source: price_quote_price_per_night
+      type: string
+      nullable: true
+      note: arbitrary-precision source string retained verbatim; see price_quote_raw
+    - name: price_quote_raw
+      source: price_quote_raw
+      type: string
+      nullable: true
+      note: 'full quote JSON preserved verbatim; declares "currency": "CAD"'
+    # --- nights and availability --------------------------------------------
+    - name: minimum_nights
+      source: minimum_nights
+      type: int
+      nullable: true
+    - name: maximum_nights
+      source: maximum_nights
+      type: int
+      nullable: true
+    - name: minimum_minimum_nights
+      source: minimum_minimum_nights
+      type: int
+      nullable: true
+    - name: maximum_minimum_nights
+      source: maximum_minimum_nights
+      type: int
+      nullable: true
+    - name: minimum_maximum_nights
+      source: minimum_maximum_nights
+      type: int
+      nullable: true
+    - name: maximum_maximum_nights
+      source: maximum_maximum_nights
+      type: int
+      nullable: true
+    - name: minimum_nights_avg_ntm
+      source: minimum_nights_avg_ntm
+      type: decimal(10,2)
+      nullable: true
+    - name: maximum_nights_avg_ntm
+      source: maximum_nights_avg_ntm
+      type: decimal(10,2)
+      nullable: true
+    - name: has_availability
+      source: has_availability
+      type: boolean
+      nullable: true
+    - name: availability_30
+      source: availability_30
+      type: int
+      nullable: true
+    - name: availability_60
+      source: availability_60
+      type: int
+      nullable: true
+    - name: availability_90
+      source: availability_90
+      type: int
+      nullable: true
+    - name: availability_365
+      source: availability_365
+      type: int
+      nullable: true
+    - name: availability_eoy
+      source: availability_eoy
+      type: int
+      nullable: true
+    # --- reviews ------------------------------------------------------------
+    - name: number_of_reviews
+      source: number_of_reviews
+      type: int
+      nullable: true
+    - name: number_of_reviews_ltm
+      source: number_of_reviews_ltm
+      type: int
+      nullable: true
+    - name: number_of_reviews_l30d
+      source: number_of_reviews_l30d
+      type: int
+      nullable: true
+    - name: number_of_reviews_ly
+      source: number_of_reviews_ly
+      type: int
+      nullable: true
+    - name: first_review
+      source: first_review
+      type: date
+      nullable: true
+    - name: last_review
+      source: last_review
+      type: date
+      nullable: true
+    - name: review_scores_rating
+      source: review_scores_rating
+      type: decimal(4,2)
+      nullable: true
+      note: 0-5 scale in this source (not 0-100)
+    - name: review_scores_accuracy
+      source: review_scores_accuracy
+      type: decimal(4,2)
+      nullable: true
+    - name: review_scores_cleanliness
+      source: review_scores_cleanliness
+      type: decimal(4,2)
+      nullable: true
+    - name: review_scores_checkin
+      source: review_scores_checkin
+      type: decimal(4,2)
+      nullable: true
+    - name: review_scores_communication
+      source: review_scores_communication
+      type: decimal(4,2)
+      nullable: true
+    - name: review_scores_location
+      source: review_scores_location
+      type: decimal(4,2)
+      nullable: true
+    - name: review_scores_value
+      source: review_scores_value
+      type: decimal(4,2)
+      nullable: true
+    - name: reviews_per_month
+      source: reviews_per_month
+      type: decimal(10,4)
+      nullable: true
+    - name: estimated_occupancy_l365d
+      source: estimated_occupancy_l365d
+      type: int
+      nullable: true
+    - name: estimated_revenue_l365d
+      source: estimated_revenue_l365d
+      type: int
+      nullable: true
+    # --- bookability --------------------------------------------------------
+    - name: instant_bookable
+      source: instant_bookable
+      type: boolean
+      nullable: true
+    # --- lineage (Bronze provenance) ---------------------------------------
+    - name: source_name
+      source: _source
+      type: string
+      nullable: false
+      note: source family/provider, e.g. insideairbnb
+    - name: city_id
+      source: _city
+      type: string
+      nullable: false
+      note: immutable city registry id
+    - name: snapshot_date
+      source: _snapshot_date
+      type: string
+      nullable: false
+      note: ISO-8601 date string kept as the identity/slice key (matches the Bronze replaceWhere boundary)
+    - name: source_raw_path
+      source: _raw_path
+      type: string
+      nullable: false
+      note: immutable landed object path
+    - name: source_run_id
+      source: _run_id
+      type: string
+      nullable: false
+      note: Bronze ingestion run that produced the row
+    - name: source_ingested_at_utc
+      source: _ingested_at_utc
+      type: timestamp
+      nullable: false
+    - name: source_file_id
+      source: _source_file_id
+      type: string
+      nullable: false
+      note: exact landed source-file identity
+    - name: source_file_hash_sha256
+      source: _file_hash_sha256
+      type: string
+      nullable: false
+      note: content hash of the exact landed bytes
+    # --- Bronze row quality (retained, not interpreted by F09.1) -------------
+    - name: bronze_quality_status
+      source: _quality_status
+      type: string
+      nullable: false
+    - name: bronze_quality_reason
+      source: _quality_reason
+      type: string
+      nullable: true
+    # --- normalization outcome ----------------------------------------------
+    - name: normalization_issues
+      from: normalization
+      type: array<string>
+      nullable: false
+      note: empty array when the row had no conversion failures
+  lineage:
+    bronze_provenance_map:
+      _source: source_name
+      _city: city_id
+      _snapshot_date: snapshot_date
+      _raw_path: source_raw_path
+      _run_id: source_run_id
+      _ingested_at_utc: source_ingested_at_utc
+      _source_file_id: source_file_id
+      _file_hash_sha256: source_file_hash_sha256
+    bronze_quality_map:
+      _quality_status: bronze_quality_status
+      _quality_reason: bronze_quality_reason
+  exclusions:
+    - column: bathrooms
+      reason: deprecated by the source and empty in every observed row; bathrooms_text carries the information
+    - column: calendar_updated
+      reason: deprecated by the source and empty in every observed row
+  normalization:
+    blank_policy: blank_to_null
+    boolean_values:
+      t: true
+      f: false
+    price_parse: strip '$' and thousands separators, then cast to decimal(10,2)
+    percent_parse: strip '%', then cast to int (0-100)
+    date_format: yyyy-MM-dd
+    timestamp_parse: ISO-8601 with UTC offset cast to timestamp
+    issues_column: normalization_issues
+    issues_policy: records Silver column names whose non-blank raw Bronze value failed deterministic conversion; blank-to-null is never an issue; no row is ever dropped or filtered (F09.2 owns rejection)

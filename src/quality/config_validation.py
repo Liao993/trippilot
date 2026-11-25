@@ -7,6 +7,7 @@ caught before the pipeline runs. Empty placeholder YAML files are
 intentionally excluded - only populated files are validated.
 """
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ CONFIG_FILES: dict[str, str] = {
     "contracts/airbnb/bronze_reviews_summary.yml": "bronze_contract",
     "contracts/airbnb/bronze_neighbourhoods.yml": "bronze_contract",
     "contracts/airbnb/bronze_neighbourhood_geometry.yml": "bronze_contract",
+    # F09.1: the normalized detailed-listings Silver contract.
+    "contracts/airbnb/silver_listings.yml": "silver_contract",
     "contracts/ops/source_file_manifest.yml": "source_manifest_contract",
 }
 
@@ -49,6 +52,39 @@ BRONZE_CONTRACT_RULES_KEYS: dict[str, str] = {
         "bronze_neighbourhood_geometry"
     ),
 }
+
+# The Silver contract carries exactly one top-level rules key, like the
+# Bronze contracts (F09.1).
+SILVER_CONTRACT_RULES_KEYS: dict[str, str] = {
+    "contracts/airbnb/silver_listings.yml": "silver_listings",
+}
+
+# Column types a Silver contract may declare. decimal(p, s) carries its
+# precision/scale explicitly; identifiers stay strings and counts stay
+# ints by design - the types are a contract, never an inference.
+_SIMPLE_COLUMN_TYPES = frozenset(
+    {"string", "boolean", "date", "timestamp", "int", "long", "array<string>"}
+)
+_DECIMAL_TYPE_PATTERN = re.compile(r"^decimal\(([0-9]+),([0-9]+)\)$")
+
+
+def is_supported_column_type(column_type: Any) -> bool:
+    """Return whether a Silver contract column type is supported."""
+    if not isinstance(column_type, str):
+        return False
+    if column_type in _SIMPLE_COLUMN_TYPES:
+        return True
+    match = _DECIMAL_TYPE_PATTERN.match(column_type)
+    return bool(match) and int(match.group(1)) > 0 and int(match.group(2)) >= 0
+
+
+# Parse markers a Silver contract column may carry beyond its type
+# (F09.1: money strips currency symbol and thousands separators,
+# percent strips the '%' sign).
+SILVER_COLUMN_PARSE_VALUES = frozenset({"money", "percent"})
+# Derivation markers for columns with no Bronze source (registry
+# currency, the normalization-issues outcome).
+SILVER_COLUMN_FROM_VALUES = frozenset({"city_registry", "normalization"})
 
 
 def _is_nonempty_string(value: Any) -> bool:
@@ -295,6 +331,180 @@ def validate_bronze_contract(
     return errors
 
 
+def validate_silver_contract(
+    content: dict[str, Any],
+    label: str = "contracts/airbnb/silver_listings.yml",
+    rules_key: str = "silver_listings",
+) -> list[str]:
+    """Check the structure of a normalized Silver contract (F09.1).
+
+    rules_key is the contract's single top-level key. The checks mirror
+    what the Silver transformation enforces at runtime: a version, the
+    canonical table, an input, a grain and primary key drawn from the
+    declared columns, unique column names with supported types and a
+    single input each (Bronze `source` or `from` derivation), lineage
+    maps whose targets are declared columns, exclusions that name a
+    reason and are not also declared, and a normalization section that
+    declares its issues column and the t/f boolean mapping.
+    """
+    try:
+        rules = get_table_rules(content, rules_key)
+    except TypeError as exc:
+        return [f"{label}: {exc}"]
+
+    errors: list[str] = []
+
+    version = rules.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        errors.append(f"{label}: '{rules_key}.version' must be a positive integer")
+
+    for key in ("table", "input", "grain", "currency_source"):
+        if not _is_nonempty_string(rules.get(key)):
+            errors.append(f"{label}: '{rules_key}.{key}' must be a non-empty string")
+
+    columns = rules.get("columns")
+    declared: set[str] = set()
+    if not isinstance(columns, list) or not columns:
+        errors.append(f"{label}: '{rules_key}.columns' must be a non-empty list")
+        columns = []
+    for entry in columns:
+        if not isinstance(entry, dict):
+            errors.append(f"{label}: '{rules_key}.columns' entries must be mappings")
+            continue
+        name = entry.get("name")
+        if not _is_nonempty_string(name):
+            errors.append(f"{label}: column entry needs a non-empty 'name'")
+            continue
+        if name in declared:
+            errors.append(f"{label}: column {name!r} is declared twice")
+            continue
+        declared.add(name)
+        column_label = f"{label}: column {name!r}"
+
+        has_source = _is_nonempty_string(entry.get("source"))
+        has_from = _is_nonempty_string(entry.get("from"))
+        if has_source == has_from:
+            errors.append(
+                f"{column_label}: must declare exactly one of 'source' "
+                "(Bronze column) or 'from' (derived input)"
+            )
+        elif has_from and entry["from"] not in SILVER_COLUMN_FROM_VALUES:
+            errors.append(
+                f"{column_label}: unknown 'from' value {entry['from']!r}; "
+                f"expected one of {sorted(SILVER_COLUMN_FROM_VALUES)}"
+            )
+
+        if not is_supported_column_type(entry.get("type")):
+            errors.append(f"{column_label}: unsupported type {entry.get('type')!r}")
+
+        parse = entry.get("parse")
+        if parse is not None and (
+            not _is_nonempty_string(parse) or parse not in SILVER_COLUMN_PARSE_VALUES
+        ):
+            errors.append(
+                f"{column_label}: unknown parse marker {parse!r}; expected "
+                f"one of {sorted(SILVER_COLUMN_PARSE_VALUES)}"
+            )
+
+        if not isinstance(entry.get("nullable"), bool):
+            errors.append(f"{column_label}: 'nullable' must be boolean")
+
+    primary_key = rules.get("primary_key")
+    if not _is_nonempty_string_list(primary_key):
+        errors.append(
+            f"{label}: '{rules_key}.primary_key' must be a non-empty list of "
+            "column names"
+        )
+    elif declared:
+        missing = [name for name in primary_key if name not in declared]
+        if missing:
+            errors.append(
+                f"{label}: '{rules_key}.primary_key' names undeclared "
+                f"columns: {missing}"
+            )
+
+    lineage = rules.get("lineage")
+    if not isinstance(lineage, dict):
+        errors.append(f"{label}: '{rules_key}.lineage' must be a mapping")
+    else:
+        for map_key in ("bronze_provenance_map", "bronze_quality_map"):
+            mapping = lineage.get(map_key)
+            if not isinstance(mapping, dict) or not mapping:
+                errors.append(
+                    f"{label}: '{rules_key}.lineage.{map_key}' must be a "
+                    "non-empty mapping"
+                )
+                continue
+            for bronze_column, silver_column in mapping.items():
+                if not _is_nonempty_string(bronze_column) or not _is_nonempty_string(
+                    silver_column
+                ):
+                    errors.append(
+                        f"{label}: '{rules_key}.lineage.{map_key}' entries must "
+                        "be non-empty strings"
+                    )
+                elif declared and silver_column not in declared:
+                    errors.append(
+                        f"{label}: lineage target {silver_column!r} is not a "
+                        "declared column"
+                    )
+
+    exclusions = rules.get("exclusions")
+    if exclusions is not None:
+        if not isinstance(exclusions, list) or not exclusions:
+            errors.append(
+                f"{label}: '{rules_key}.exclusions' must be a non-empty list "
+                "when present"
+            )
+        else:
+            for entry in exclusions:
+                if (
+                    not isinstance(entry, dict)
+                    or not _is_nonempty_string(entry.get("column"))
+                    or not _is_nonempty_string(entry.get("reason"))
+                ):
+                    errors.append(
+                        f"{label}: '{rules_key}.exclusions' entries need "
+                        "'column' and 'reason'"
+                    )
+                    continue
+                if declared and entry["column"] in declared:
+                    errors.append(
+                        f"{label}: excluded column {entry['column']!r} is also "
+                        "declared as a column"
+                    )
+
+    normalization = rules.get("normalization")
+    if not isinstance(normalization, dict) or not normalization:
+        errors.append(
+            f"{label}: '{rules_key}.normalization' must be a non-empty mapping"
+        )
+    else:
+        issues_column = normalization.get("issues_column")
+        if not _is_nonempty_string(issues_column):
+            errors.append(
+                f"{label}: '{rules_key}.normalization.issues_column' must be "
+                "a non-empty string"
+            )
+        elif declared and issues_column not in declared:
+            errors.append(
+                f"{label}: '{rules_key}.normalization.issues_column' must be "
+                "a declared column"
+            )
+        if normalization.get("boolean_values") != {"t": True, "f": False}:
+            errors.append(
+                f"{label}: '{rules_key}.normalization.boolean_values' must "
+                "map t -> true and f -> false"
+            )
+        if not _is_nonempty_string(normalization.get("blank_policy")):
+            errors.append(
+                f"{label}: '{rules_key}.normalization.blank_policy' must be "
+                "a non-empty string"
+            )
+
+    return errors
+
+
 MANIFEST_REQUIRED_FIELDS = (
     "source_file_id",
     "source_family",
@@ -408,6 +618,7 @@ VALIDATORS = {
     "project": validate_project_config,
     "city_registry": validate_city_registry,
     "bronze_contract": validate_bronze_contract,
+    "silver_contract": validate_silver_contract,
     "source_manifest_contract": validate_source_manifest_contract,
 }
 
@@ -450,6 +661,12 @@ def validate_config_files(repo_root: str | Path | None = None) -> None:
             errors.extend(
                 validate_bronze_contract(
                     content, label, rules_key=BRONZE_CONTRACT_RULES_KEYS[rel_path]
+                )
+            )
+        elif kind == "silver_contract":
+            errors.extend(
+                validate_silver_contract(
+                    content, label, rules_key=SILVER_CONTRACT_RULES_KEYS[rel_path]
                 )
             )
         else:

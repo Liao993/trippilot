@@ -4,6 +4,7 @@ These tests use small hardcoded inputs on purpose. They check the exact
 structure rules without needing Spark, Databricks, a Volume, or real tables.
 """
 
+import copy
 import sys
 from pathlib import Path
 
@@ -28,10 +29,14 @@ import pytest
 import yaml
 
 from src.quality.config_validation import (
+    SILVER_COLUMN_FROM_VALUES,
+    SILVER_COLUMN_PARSE_VALUES,
+    is_supported_column_type,
     validate_bronze_contract,
     validate_city_registry,
     validate_config_files,
     validate_project_config,
+    validate_silver_contract,
     validate_source_city_registration,
     validate_source_manifest_contract,
 )
@@ -746,6 +751,100 @@ def test_validate_config_files_reports_invalid_yaml(tmp_path):
     assert "config/city_registry.yml" in str(excinfo.value)
 
 
+# F09.1: a structurally valid Silver contract, one representative
+# column per declared shape (string, typed cast, money, percent,
+# boolean, date, timestamp, provenance, quality, registry-derived,
+# normalization-derived).
+SILVER_CONTRACT = {
+    "silver_listings": {
+        "version": 1,
+        "table": "trippilot_dev.silver.airbnb_listings_silver",
+        "input": "bronze_listings",
+        "grain": "one source listing observation per (city_id, snapshot_date, listing_id)",
+        "primary_key": ["city_id", "snapshot_date", "listing_id"],
+        "write_policy": "replace_city_snapshot",
+        "currency_source": "city_registry",
+        "columns": [
+            {"name": "listing_id", "source": "id", "type": "string", "nullable": False},
+            {
+                "name": "price",
+                "source": "price",
+                "type": "decimal(10,2)",
+                "parse": "money",
+                "nullable": True,
+            },
+            {
+                "name": "host_response_rate",
+                "source": "host_response_rate",
+                "type": "int",
+                "parse": "percent",
+                "nullable": True,
+            },
+            {
+                "name": "instant_bookable",
+                "source": "instant_bookable",
+                "type": "boolean",
+                "nullable": True,
+            },
+            {
+                "name": "last_review",
+                "source": "last_review",
+                "type": "date",
+                "nullable": True,
+            },
+            {
+                "name": "source_ingested_at_utc",
+                "source": "_ingested_at_utc",
+                "type": "timestamp",
+                "nullable": False,
+            },
+            {"name": "city_id", "source": "_city", "type": "string", "nullable": False},
+            {
+                "name": "snapshot_date",
+                "source": "_snapshot_date",
+                "type": "string",
+                "nullable": False,
+            },
+            {
+                "name": "bronze_quality_status",
+                "source": "_quality_status",
+                "type": "string",
+                "nullable": False,
+            },
+            {
+                "name": "currency",
+                "from": "city_registry",
+                "type": "string",
+                "nullable": False,
+            },
+            {
+                "name": "normalization_issues",
+                "from": "normalization",
+                "type": "array<string>",
+                "nullable": False,
+            },
+        ],
+        "lineage": {
+            "bronze_provenance_map": {
+                "_city": "city_id",
+                "_ingested_at_utc": "source_ingested_at_utc",
+            },
+            "bronze_quality_map": {"_quality_status": "bronze_quality_status"},
+        },
+        "exclusions": [{"column": "bathrooms", "reason": "deprecated by the source"}],
+        "normalization": {
+            "blank_policy": "blank_to_null",
+            "boolean_values": {"t": True, "f": False},
+            "issues_column": "normalization_issues",
+        },
+    }
+}
+
+
+def _silver_content():
+    return copy.deepcopy(SILVER_CONTRACT)
+
+
 def test_validate_config_files_reports_missing_file(tmp_path):
     with pytest.raises(ValueError) as excinfo:
         validate_config_files(tmp_path)
@@ -756,7 +855,195 @@ def test_validate_config_files_reports_missing_file(tmp_path):
         "contracts/airbnb/bronze_listings.yml",
         "contracts/airbnb/bronze_calendar.yml",
         "contracts/airbnb/bronze_reviews.yml",
+        "contracts/airbnb/silver_listings.yml",
         "contracts/ops/source_file_manifest.yml",
     ]:
         assert rel in message
     assert "required file is missing" in message
+
+
+# ---------------------------------------------------------------------
+# Silver contract validation (F09.1)
+# ---------------------------------------------------------------------
+
+
+def test_valid_silver_contract_passes():
+    assert validate_silver_contract(_silver_content()) == []
+
+
+def test_silver_contract_reports_wrong_rules_key():
+    content = {"silver_calendar": _silver_content()["silver_listings"]}
+    errors = validate_silver_contract(content)
+    assert any("Missing rules for table" in error for error in errors)
+
+
+def test_silver_missing_version_is_reported():
+    content = _silver_content()
+    del content["silver_listings"]["version"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "version" in errors[0]
+
+
+def test_silver_bad_version_is_reported():
+    content = _silver_content()
+    content["silver_listings"]["version"] = "1"
+    errors = validate_silver_contract(content)
+    assert any("version" in error for error in errors)
+
+
+def test_silver_missing_descriptors_are_reported():
+    content = _silver_content()
+    rules = content["silver_listings"]
+    del rules["table"]
+    del rules["input"]
+    del rules["grain"]
+    del rules["currency_source"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 4
+    for key in ("table", "input", "grain", "currency_source"):
+        assert any(key in error for error in errors)
+
+
+def test_silver_bad_column_type_is_reported():
+    content = _silver_content()
+    content["silver_listings"]["columns"][1]["type"] = "number"
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "price" in errors[0]
+
+
+def test_silver_column_with_both_inputs_is_reported():
+    content = _silver_content()
+    column = content["silver_listings"]["columns"][1]
+    column["from"] = "city_registry"
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "exactly one of 'source'" in errors[0]
+
+
+def test_silver_column_with_neither_input_is_reported():
+    content = _silver_content()
+    del content["silver_listings"]["columns"][1]["source"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "exactly one of 'source'" in errors[0]
+
+
+def test_silver_unknown_from_value_is_reported():
+    content = _silver_content()
+    content["silver_listings"]["columns"][8]["from"] = "magic"
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "'from'" in errors[0]
+
+
+def test_silver_unknown_parse_marker_is_reported():
+    content = _silver_content()
+    content["silver_listings"]["columns"][2]["parse"] = "fraction"
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "parse marker" in errors[0]
+
+
+def test_silver_duplicate_column_is_reported():
+    content = _silver_content()
+    rules = content["silver_listings"]
+    rules["columns"].append(copy.deepcopy(rules["columns"][0]))
+    errors = validate_silver_contract(content)
+    assert any("declared twice" in error for error in errors)
+
+
+def test_silver_missing_nullable_flag_is_reported():
+    content = _silver_content()
+    del content["silver_listings"]["columns"][0]["nullable"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "nullable" in errors[0]
+
+
+def test_silver_primary_key_must_be_declared():
+    content = _silver_content()
+    content["silver_listings"]["primary_key"] = ["city_id", "not_a_column"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "undeclared columns" in errors[0]
+
+
+def test_silver_excluded_column_cannot_be_declared():
+    content = _silver_content()
+    rules = content["silver_listings"]
+    rules["columns"].append(
+        {"name": "bathrooms", "source": "bathrooms", "type": "string", "nullable": True}
+    )
+    errors = validate_silver_contract(content)
+    assert any("also declared" in error for error in errors)
+
+
+def test_silver_exclusion_needs_a_reason():
+    content = _silver_content()
+    content["silver_listings"]["exclusions"] = [{"column": "bathrooms"}]
+    errors = validate_silver_contract(content)
+    assert any("'column' and 'reason'" in error for error in errors)
+
+
+def test_silver_issues_column_must_be_declared():
+    content = _silver_content()
+    rules = content["silver_listings"]
+    rules["normalization"]["issues_column"] = "issues"
+    errors = validate_silver_contract(content)
+    assert any("issues_column" in error for error in errors)
+
+
+def test_silver_lineage_target_must_be_declared():
+    content = _silver_content()
+    rules = content["silver_listings"]
+    rules["lineage"]["bronze_quality_map"]["_quality_status"] = "quality_status"
+    errors = validate_silver_contract(content)
+    assert any("not a declared column" in error for error in errors)
+
+
+def test_silver_boolean_values_must_map_t_and_f():
+    content = _silver_content()
+    rules = content["silver_listings"]
+    rules["normalization"]["boolean_values"] = {"t": "true", "f": "false"}
+    errors = validate_silver_contract(content)
+    assert any("boolean_values" in error for error in errors)
+
+
+def test_supported_column_type_matrix():
+    supported = [
+        "string",
+        "boolean",
+        "date",
+        "timestamp",
+        "int",
+        "long",
+        "array<string>",
+        "decimal(10,2)",
+        "decimal(9,6)",
+        "decimal(1,0)",
+    ]
+    for column_type in supported:
+        assert is_supported_column_type(column_type), column_type
+
+    unsupported = [
+        "number",
+        "float",
+        "double",
+        "decimal",
+        "decimal(10)",
+        "decimal(10,2,3)",
+        "decimal(0,2)",
+        "decimal(10,-2)",
+        "",
+        None,
+        42,
+    ]
+    for column_type in unsupported:
+        assert not is_supported_column_type(column_type), column_type
+
+
+def test_silver_marker_sets_are_closed():
+    assert SILVER_COLUMN_FROM_VALUES == frozenset({"city_registry", "normalization"})
+    assert SILVER_COLUMN_PARSE_VALUES == frozenset({"money", "percent"})
