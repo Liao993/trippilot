@@ -43,6 +43,21 @@ def test_run_mode_accepts_test_and_live():
     assert validate_run_mode("live") == "live"
 
 
+def test_listings_silver_resolves_by_run_mode():
+    # F09.1: the normalized listings Silver destination follows the
+    # same isolation rules as every other table - test mode maps into
+    # the trippilot_test catalog, live mode resolves the dev table.
+    assert (
+        resolve_table("listings_silver", "test")
+        == "trippilot_test.silver.airbnb_listings_silver"
+    )
+    assert (
+        resolve_table("listings_silver", "live")
+        == "trippilot_dev.silver.airbnb_listings_silver"
+    )
+    assert "listings_silver" in LIVE_TABLES
+
+
 def test_run_mode_rejects_unknown_values():
     with pytest.raises(ValueError):
         validate_run_mode("prod")
@@ -177,7 +192,7 @@ def test_live_table_keys_use_configured_schemas():
     for table in LIVE_TABLES.values():
         catalog, schema, _table = table.split(".")
         assert catalog == "trippilot_dev"
-        assert schema in {"bronze", "ops"}
+        assert schema in {"bronze", "silver", "ops"}
 
 
 def test_force_reload_accepts_bools_and_widget_strings():

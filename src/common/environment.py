@@ -65,6 +65,11 @@ LIVE_TABLES = {
     "neighbourhood_geometry_bronze": (
         "trippilot_dev.bronze.airbnb_neighbourhood_geometry_bronze"
     ),
+    # F09.1: normalized detailed-listings Silver - the contract-driven
+    # Bronze projection (standardized names, explicit types, retained
+    # lineage). Test mode maps it into trippilot_test like every other
+    # destination.
+    "listings_silver": "trippilot_dev.silver.airbnb_listings_silver",
 }
 
 
