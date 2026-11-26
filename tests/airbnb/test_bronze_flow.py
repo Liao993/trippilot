@@ -37,14 +37,12 @@ print("Repository root:", ROOT)
 import pytest
 
 from src.airbnb.bronze_flow import (
-    PROVENANCE_COLUMNS,
     READ_OPTIONS,
     BronzeDatasetSpec,
-    repo_root,
     verify_and_inspect_source,
 )
-from src.common.environment import resolve_table
-from src.common.provenance import build_provenance_columns
+from src.common.environment import repo_root, resolve_table
+from src.common.provenance import PROVENANCE_COLUMNS, build_provenance_columns
 
 
 def test_repo_root_contains_project_layout():

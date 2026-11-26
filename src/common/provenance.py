@@ -7,6 +7,23 @@ This keeps reusable logic in src/, where your existing CI can lint and test it. 
 from datetime import UTC, datetime
 from uuid import uuid4
 
+# The lineage columns Bronze stamps on every row and both stages
+# project forward - the shared vocabulary of the Bronze-to-Silver
+# interface. Declared here beside ``build_provenance_columns`` (which
+# produces exactly these keys with the leading underscores stripped)
+# so Bronze and Silver import one definition instead of re-declaring
+# the names independently.
+PROVENANCE_COLUMNS = (
+    "_source",
+    "_city",
+    "_snapshot_date",
+    "_raw_path",
+    "_run_id",
+    "_ingested_at_utc",
+    "_source_file_id",
+    "_file_hash_sha256",
+)
+
 
 def build_run_id() -> str:
     """Create a unique identifier for one ingestion execution."""

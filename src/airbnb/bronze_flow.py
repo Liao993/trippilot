@@ -41,7 +41,6 @@ manifest record (``source_entity_id``, ``source_version``,
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from src.airbnb.geojson_reader import parse_geojson_features
 from src.airbnb.ingestion import write_snapshot
@@ -57,13 +56,18 @@ from src.airbnb.source_inspection import (
     verify_gzip_integrity,
 )
 from src.common.environment import (
+    repo_root,
     resolve_table,
     validate_destination,
     validate_force_reload,
     validate_run_mode,
 )
 from src.common.ingestion_manifest import IngestionManifestStore
-from src.common.provenance import build_provenance_columns, build_run_id
+from src.common.provenance import (
+    PROVENANCE_COLUMNS,
+    build_provenance_columns,
+    build_run_id,
+)
 from src.common.run_controls import (
     _in_dataset_scope,
     decide_ingestion_action,
@@ -73,17 +77,6 @@ from src.common.run_controls import (
 from src.common.source_acquisition import verify_landed_record
 from src.common.source_manifest_store import ManifestStore
 from src.quality.contract_loader import get_table_rules, load_contract
-
-PROVENANCE_COLUMNS = (
-    "_source",
-    "_city",
-    "_snapshot_date",
-    "_raw_path",
-    "_run_id",
-    "_ingested_at_utc",
-    "_source_file_id",
-    "_file_hash_sha256",
-)
 
 READ_OPTIONS = {
     "header": True,
@@ -115,14 +108,6 @@ def verify_and_inspect_source(
     if file_type == "geojson":
         return inspect_geojson(path, schema_label=schema_label)
     raise ValueError(f"Unsupported Bronze source file type: {file_type!r}")
-
-
-def repo_root() -> Path:
-    """Locate the repository root from this module's own location."""
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "src").is_dir() and (parent / "config").is_dir():
-            return parent
-    raise RuntimeError("Cannot locate the TripPilot repository root.")
 
 
 @dataclass(frozen=True)
