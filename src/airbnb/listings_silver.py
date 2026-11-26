@@ -36,7 +36,6 @@ pattern.
 
 from typing import Any
 
-from src.airbnb.bronze_flow import PROVENANCE_COLUMNS, repo_root
 from src.airbnb.ingestion import write_snapshot
 from src.common.city_registry import get_city
 from src.common.control_plane import (
@@ -45,11 +44,13 @@ from src.common.control_plane import (
     load_project_config,
 )
 from src.common.environment import (
+    repo_root,
     resolve_table,
     validate_destination,
     validate_run_mode,
 )
 from src.common.ingestion_manifest import IngestionManifestStore
+from src.common.provenance import PROVENANCE_COLUMNS
 from src.common.source_acquisition import verify_landed_record
 from src.common.source_manifest_store import ManifestStore
 from src.quality.contract_loader import get_table_rules, load_contract

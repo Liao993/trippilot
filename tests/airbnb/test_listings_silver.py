@@ -41,7 +41,6 @@ print("Repository root:", ROOT)
 
 import pytest
 
-from src.airbnb.bronze_flow import PROVENANCE_COLUMNS
 from src.airbnb.listings_silver import (
     BRONZE_QUALITY_COLUMNS,
     DETAILED_LISTINGS_SOURCE_COLUMNS,
@@ -54,6 +53,7 @@ from src.airbnb.listings_silver import (
     resolve_silver_slice_identity,
 )
 from src.common.control_plane import load_city_registry, load_project_config
+from src.common.provenance import PROVENANCE_COLUMNS
 
 RULES = load_silver_rules(ROOT)
 SPECS = column_specs(RULES)

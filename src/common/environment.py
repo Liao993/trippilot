@@ -21,9 +21,25 @@ through ``resolve_table`` / ``resolve_tables``.
 """
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from src.common.run_controls import should_load
+
+
+def repo_root() -> Path:
+    """Locate the repository root from this module's own location.
+
+    Shared by every stage and validator that must find ``contracts/``
+    or ``config/`` from wherever the code executes (notebook or CI).
+    Moved here from the Bronze flow in the F09.1 follow-up so no stage
+    imports another stage's module for a generic locator.
+    """
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "src").is_dir() and (parent / "config").is_dir():
+            return parent
+    raise RuntimeError("Cannot locate the TripPilot repository root.")
+
 
 VALID_RUN_MODES = ("test", "live")
 
