@@ -827,7 +827,7 @@ SILVER_CONTRACT = {
             {
                 "name": "country",
                 "from": "city_registry",
-                "registry_key": "country_code",
+                "registry_key": "country_name",
                 "type": "string",
                 "nullable": False,
             },

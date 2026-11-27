@@ -183,7 +183,7 @@ def test_price_policy_is_cad_decimal_with_money_parse():
 
     country = spec_by_name["country"]
     assert country["from"] == "city_registry"
-    assert country["registry_key"] == "country_code"
+    assert country["registry_key"] == "country_name"
     assert country["type"] == "string"
     assert country["nullable"] is False
 
@@ -534,7 +534,9 @@ def _base_row(**overrides):
 
 def _normalize(spark, rows):
     bronze = _bronze_slice(spark, rows)
-    return normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="CA")
+    return normalize_listings_bronze(
+        bronze, RULES, currency="CAD", country_name="Canada"
+    )
 
 
 def test_normalize_preserves_rows_and_column_order():
@@ -603,7 +605,7 @@ def test_normalize_parses_representative_values():
 
     # registry currency and country, never parsed from the source
     assert row["currency"] == "CAD"
-    assert row["country"] == "CA"
+    assert row["country"] == "Canada"
 
     # fuzzy amenity flags over the fixture amenities ('["Wifi", "Kitchen"]')
     # and the null description
@@ -808,7 +810,7 @@ def test_normalize_rejects_missing_bronze_column():
     pytest.importorskip("pyspark")
     bronze = _bronze_slice(_spark(), [_base_row()]).drop("beds")
     with pytest.raises(ValueError, match="does not match"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="CA")
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_name="Canada")
 
 
 def test_normalize_rejects_unexpected_bronze_column():
@@ -817,7 +819,7 @@ def test_normalize_rejects_unexpected_bronze_column():
 
     bronze = _bronze_slice(_spark(), [_base_row()]).withColumn("future_col", F.lit("x"))
     with pytest.raises(ValueError, match="does not match"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="CA")
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_name="Canada")
 
 
 def test_normalize_requires_currency():
@@ -827,8 +829,8 @@ def test_normalize_requires_currency():
         normalize_listings_bronze(bronze, RULES, currency="")
 
 
-def test_normalize_requires_country_code():
+def test_normalize_requires_country_name():
     pytest.importorskip("pyspark")
     bronze = _bronze_slice(_spark(), [_base_row()])
-    with pytest.raises(ValueError, match="country_code"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="")
+    with pytest.raises(ValueError, match="country_name"):
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_name="")

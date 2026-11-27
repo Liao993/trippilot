@@ -211,10 +211,10 @@ silver_listings:
       note: registered city currency (toronto -> CAD); never parsed from the source, never converted
     - name: country
       from: city_registry
-      registry_key: country_code
+      registry_key: country_name
       type: string
       nullable: false
-      note: registered city country, ISO 3166-1 alpha-2 (toronto -> CA); never parsed from the source
+      note: full registered country name for visualization (toronto -> Canada); the ISO 3166-1 alpha-2 code stays in the registry; never parsed from the source
     # --- derived amenity flags (v2 follow-up, operator-ordered 2026-11-27) --
     # Fuzzy, recall-oriented search over the amenities JSON array and
     # the free-text description (lowercased substring match). true when

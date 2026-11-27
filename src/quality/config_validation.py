@@ -90,7 +90,7 @@ SILVER_COLUMN_FROM_VALUES = frozenset(
 
 # Registry-derived Silver columns declare which city-registry field
 # they take their value from.
-SILVER_REGISTRY_KEY_VALUES = frozenset({"currency", "country_code"})
+SILVER_REGISTRY_KEY_VALUES = frozenset({"currency", "country_name"})
 
 
 def _is_nonempty_string(value: Any) -> bool:

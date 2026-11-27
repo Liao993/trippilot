@@ -333,7 +333,7 @@ def normalize_listings_bronze(
     bronze_df,
     rules: dict[str, Any],
     currency: str,
-    country_code: str = "",
+    country_name: str = "",
 ):
     """Project one Bronze slice into the documented Silver shape.
 
@@ -347,8 +347,8 @@ def normalize_listings_bronze(
 
     if not isinstance(currency, str) or not currency.strip():
         raise ValueError("currency is required to normalize listings Silver")
-    if not isinstance(country_code, str) or not country_code.strip():
-        raise ValueError("country_code is required to normalize listings Silver")
+    if not isinstance(country_name, str) or not country_name.strip():
+        raise ValueError("country_name is required to normalize listings Silver")
 
     specs = column_specs(rules)
 
@@ -374,7 +374,7 @@ def normalize_listings_bronze(
         if derived_from == "city_registry":
             registry_values = {
                 "currency": currency,
-                "country_code": country_code,
+                "country_name": country_name,
             }
             registry_key = spec["registry_key"]
             value = registry_values[registry_key]
@@ -570,9 +570,9 @@ def run_listings_silver_transform(
     currency = city.get("currency")
     if not isinstance(currency, str) or not currency.strip():
         raise ValueError(f"city registry entry {city_id!r} has no currency")
-    country_code = city.get("country_code")
-    if not isinstance(country_code, str) or not country_code.strip():
-        raise ValueError(f"city registry entry {city_id!r} has no country_code")
+    country_name = city.get("country_name")
+    if not isinstance(country_name, str) or not country_name.strip():
+        raise ValueError(f"city registry entry {city_id!r} has no country_name")
 
     ingestion_store = IngestionManifestStore(ingestion_manifest_table, spark=spark)
     ingestion_rows = ingestion_store.list_for_city_dataset(city_id, SILVER_DATASET)
@@ -598,7 +598,7 @@ def run_listings_silver_transform(
     )
     print(f"Silver target:   {silver_table}")
     print(f"Currency:        {currency} (city registry; no conversion)")
-    print(f"Country:         {country_code} (city registry)")
+    print(f"Country:         {country_name} (city registry)")
 
     bronze_df = (
         spark.table(bronze_table)
@@ -607,7 +607,7 @@ def run_listings_silver_transform(
         .where(F.col("_source_file_id") == identity["source_file_id"])
     )
     silver_df = normalize_listings_bronze(
-        bronze_df, rules, currency=currency, country_code=country_code
+        bronze_df, rules, currency=currency, country_name=country_name
     )
 
     bronze_rows = bronze_df.count()

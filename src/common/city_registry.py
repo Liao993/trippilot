@@ -25,7 +25,13 @@ REQUIRED_CITY_FIELDS = (
     "timezone",
     "enabled",
 )
-OPTIONAL_CITY_FIELDS = ("currency", "latitude", "longitude", "boundary_reference")
+OPTIONAL_CITY_FIELDS = (
+    "currency",
+    "country_name",
+    "latitude",
+    "longitude",
+    "boundary_reference",
+)
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _COUNTRY_PATTERN = re.compile(r"^[A-Z]{2}$")
@@ -142,6 +148,12 @@ def find_registry_problems(registry: Any) -> list[str]:
             problems.append(
                 f"{label} 'country_code' must be a 2-letter ISO 3166-1 "
                 f"alpha-2 code, got {country!r}"
+            )
+
+        country_name = entry.get("country_name")
+        if country_name is not None and not _is_nonempty_string(country_name):
+            problems.append(
+                f"{label} 'country_name' must be a non-empty string when present"
             )
 
         timezone = entry.get("timezone")
