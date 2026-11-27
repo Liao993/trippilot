@@ -191,6 +191,7 @@ def column_specs(rules: dict[str, Any]) -> list[dict[str, Any]]:
     from src.quality.config_validation import (
         SILVER_COLUMN_FROM_VALUES,
         SILVER_COLUMN_PARSE_VALUES,
+        SILVER_REGISTRY_KEY_VALUES,
         is_supported_column_type,
     )
 
@@ -229,6 +230,36 @@ def column_specs(rules: dict[str, Any]) -> list[dict[str, Any]]:
                 f"{entry['from']!r}; expected one of "
                 f"{sorted(SILVER_COLUMN_FROM_VALUES)}"
             )
+        if (
+            has_from
+            and entry["from"] == "city_registry"
+            and entry.get("registry_key") not in SILVER_REGISTRY_KEY_VALUES
+        ):
+            raise ValueError(
+                f"silver contract column {name!r}: city_registry columns "
+                "must declare registry_key one of "
+                f"{sorted(SILVER_REGISTRY_KEY_VALUES)}"
+            )
+        if has_from and entry["from"] == "amenity_search":
+            if entry.get("type") != "boolean":
+                raise ValueError(
+                    f"silver contract column {name!r}: amenity_search "
+                    "columns must be boolean"
+                )
+            patterns = entry.get("patterns")
+            if (
+                not isinstance(patterns, list)
+                or not patterns
+                or any(
+                    not isinstance(pattern, str) or not pattern.strip()
+                    for pattern in patterns
+                )
+            ):
+                raise ValueError(
+                    f"silver contract column {name!r}: amenity_search "
+                    "columns need a non-empty 'patterns' list of non-blank "
+                    "strings"
+                )
 
         column_type = entry.get("type")
         if not isinstance(column_type, str) or not is_supported_column_type(
@@ -272,6 +303,11 @@ def expected_bronze_columns() -> tuple[str, ...]:
     )
 
 
+def _sql_string_literal(value: str) -> str:
+    """Escape a value for a single-quoted SQL string literal."""
+    return value.replace("'", "''")
+
+
 def _sql_value(source_column: str, parse: str | None) -> str:
     """Return the SQL expression cleaning one raw Bronze value.
 
@@ -293,7 +329,12 @@ def _sql_value(source_column: str, parse: str | None) -> str:
     return cleaned
 
 
-def normalize_listings_bronze(bronze_df, rules: dict[str, Any], currency: str):
+def normalize_listings_bronze(
+    bronze_df,
+    rules: dict[str, Any],
+    currency: str,
+    country_name: str = "",
+):
     """Project one Bronze slice into the documented Silver shape.
 
     Contract-driven: every column expression comes from the Silver
@@ -306,6 +347,8 @@ def normalize_listings_bronze(bronze_df, rules: dict[str, Any], currency: str):
 
     if not isinstance(currency, str) or not currency.strip():
         raise ValueError("currency is required to normalize listings Silver")
+    if not isinstance(country_name, str) or not country_name.strip():
+        raise ValueError("country_name is required to normalize listings Silver")
 
     specs = column_specs(rules)
 
@@ -329,10 +372,54 @@ def normalize_listings_bronze(bronze_df, rules: dict[str, Any], currency: str):
         derived_from = spec.get("from")
 
         if derived_from == "city_registry":
-            selects.append(F.lit(currency).alias(name))
+            registry_values = {
+                "currency": currency,
+                "country_name": country_name,
+            }
+            registry_key = spec["registry_key"]
+            value = registry_values[registry_key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"registry value {registry_key!r} is required to "
+                    "normalize listings Silver"
+                )
+            selects.append(F.lit(value).alias(name))
             continue
         if derived_from == "normalization":
             # The issues column is appended after every real column.
+            continue
+
+        if derived_from == "amenity_search":
+            # Recall-oriented fuzzy search over the amenities JSON array
+            # and the free-text description: lowercased substring match
+            # against the contract-declared patterns, after stripping
+            # the contract-declared substring traps (e.g. 'washer'
+            # hiding inside 'Dishwasher'). true on any match; false when
+            # at least one input was searched and nothing matched; null
+            # only when both inputs are null/blank.
+            haystacks = [
+                "lower(coalesce(`amenities`, ''))",
+                "lower(coalesce(`description`, ''))",
+            ]
+            for trap in spec.get("remove_patterns", []):
+                escaped = _sql_string_literal(trap)
+                haystacks = [
+                    f"replace({haystack}, '{escaped}', '')" for haystack in haystacks
+                ]
+            searched = " or ".join(
+                f"nullif({haystack}, '') is not null" for haystack in haystacks
+            )
+            matched = " or ".join(
+                f"instr({haystack}, '{_sql_string_literal(pattern)}') > 0"
+                for haystack in haystacks
+                for pattern in spec["patterns"]
+            )
+            selects.append(
+                F.expr(
+                    f"case when not ({searched}) then null "
+                    f"when {matched} then true else false end"
+                ).alias(name)
+            )
             continue
 
         source_column = spec["source"]
@@ -483,6 +570,9 @@ def run_listings_silver_transform(
     currency = city.get("currency")
     if not isinstance(currency, str) or not currency.strip():
         raise ValueError(f"city registry entry {city_id!r} has no currency")
+    country_name = city.get("country_name")
+    if not isinstance(country_name, str) or not country_name.strip():
+        raise ValueError(f"city registry entry {city_id!r} has no country_name")
 
     ingestion_store = IngestionManifestStore(ingestion_manifest_table, spark=spark)
     ingestion_rows = ingestion_store.list_for_city_dataset(city_id, SILVER_DATASET)
@@ -508,6 +598,7 @@ def run_listings_silver_transform(
     )
     print(f"Silver target:   {silver_table}")
     print(f"Currency:        {currency} (city registry; no conversion)")
+    print(f"Country:         {country_name} (city registry)")
 
     bronze_df = (
         spark.table(bronze_table)
@@ -515,7 +606,9 @@ def run_listings_silver_transform(
         .where(F.col("_snapshot_date") == identity["snapshot_date"])
         .where(F.col("_source_file_id") == identity["source_file_id"])
     )
-    silver_df = normalize_listings_bronze(bronze_df, rules, currency=currency)
+    silver_df = normalize_listings_bronze(
+        bronze_df, rules, currency=currency, country_name=country_name
+    )
 
     bronze_rows = bronze_df.count()
     if bronze_rows == 0:

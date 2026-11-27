@@ -71,10 +71,13 @@ def test_silver_contract_file_is_the_expected_one():
     assert (ROOT / SILVER_CONTRACT_PATH).is_file()
 
 
-def test_contract_declares_100_unique_columns():
+def test_contract_declares_96_unique_columns():
+    # v2 slimming (2026-11-27): 11 all-null source columns moved to the
+    # documented exclusions (100 - 11 = 89); the v2 follow-up added the
+    # registry-derived country and six amenity flags (89 + 7 = 96).
     names = [spec["name"] for spec in SPECS]
-    assert len(names) == 100
-    assert len(set(names)) == 100
+    assert len(names) == 96
+    assert len(set(names)) == 96
 
 
 def test_expected_bronze_columns_are_the_documented_100():
@@ -108,15 +111,28 @@ def test_contract_accounts_for_every_source_column():
         assert entry["reason"].strip()
 
 
-def test_deprecated_columns_are_the_only_exclusions():
+def test_exclusions_are_the_documented_dead_columns():
+    # v2: the two source-deprecated columns plus the 11 columns the
+    # live null inspection (2026-11-27) showed carry no data.
     assert {entry["column"] for entry in RULES["exclusions"]} == {
         "bathrooms",
         "calendar_updated",
+        "neighborhood_overview",
+        "host_since",
+        "host_response_time",
+        "host_response_rate",
+        "host_acceptance_rate",
+        "host_thumbnail_url",
+        "host_neighbourhood",
+        "host_total_listings_count",
+        "neighbourhood",
+        "neighbourhood_group_cleansed",
+        "instant_bookable",
     }
 
 
 def test_grain_primary_key_and_table():
-    assert RULES["version"] == 1
+    assert RULES["version"] == 2
     assert RULES["table"] == "trippilot_dev.silver.airbnb_listings_silver"
     assert RULES["input"] == "bronze_listings"
     assert RULES["write_policy"] == "replace_city_snapshot"
@@ -156,14 +172,47 @@ def test_price_policy_is_cad_decimal_with_money_parse():
     assert price["type"] == "decimal(10,2)"
     assert price["parse"] == "money"
 
-    for rate in ("host_response_rate", "host_acceptance_rate"):
-        spec = spec_by_name[rate]
-        assert spec["type"] == "int"
-        assert spec["parse"] == "percent"
+    # v2: no contracted column uses percent parsing any more - both
+    # percent columns were all-null and are documented exclusions.
+    assert not any(spec.get("parse") == "percent" for spec in SPECS)
 
     currency = spec_by_name["currency"]
     assert currency["from"] == "city_registry"
+    assert currency["registry_key"] == "currency"
     assert currency["nullable"] is False
+
+    country = spec_by_name["country"]
+    assert country["from"] == "city_registry"
+    assert country["registry_key"] == "country_name"
+    assert country["type"] == "string"
+    assert country["nullable"] is False
+
+
+def test_amenity_flag_columns_are_contract_driven():
+    spec_by_name = {spec["name"]: spec for spec in SPECS}
+    expected_patterns = {
+        "has_kitchen": {"kitchen", "cooking", "cookware"},
+        "has_hair_dryer": {"hair dryer", "hairdryer"},
+        "has_outdoor_space": {"balcony", "backyard", "patio", "terrace"},
+        "has_laundry": {"laundry", "laundries", "washing machine", "washer"},
+        "has_wifi": {"wifi", "wi-fi", "wi fi", "wireless"},
+        "pets_allowed": {
+            "pets allowed",
+            "pet allowed",
+            "pet friendly",
+            "pets welcome",
+            "pets stay",
+            "pets live",
+        },
+    }
+    for name, patterns in expected_patterns.items():
+        spec = spec_by_name[name]
+        assert spec["from"] == "amenity_search"
+        assert spec["type"] == "boolean"
+        assert set(spec["patterns"]) == patterns
+    # substring traps are stripped before matching
+    assert set(spec_by_name["has_laundry"]["remove_patterns"]) == {"dishwasher"}
+    assert set(spec_by_name["pets_allowed"]["remove_patterns"]) == {"no pets"}
 
 
 def test_quote_fields_stay_verbatim_strings():
@@ -177,11 +226,21 @@ def test_quote_fields_stay_verbatim_strings():
         assert "parse" not in spec_by_name[name]
 
 
-def test_issues_column_is_the_only_normalization_derivation():
+def test_derived_columns_are_the_documented_v2_set():
+    # v2: the registry-derived currency and country, the
+    # normalization-issues outcome, and the six fuzzy amenity flags
+    # are the only columns with no Bronze source.
     derived = [spec for spec in SPECS if "from" in spec]
     assert {spec["name"] for spec in derived} == {
         "currency",
+        "country",
         "normalization_issues",
+        "has_kitchen",
+        "has_hair_dryer",
+        "has_outdoor_space",
+        "has_laundry",
+        "has_wifi",
+        "pets_allowed",
     }
     issues = next(spec for spec in derived if spec["name"] == "normalization_issues")
     assert issues["type"] == "array<string>"
@@ -475,7 +534,9 @@ def _base_row(**overrides):
 
 def _normalize(spark, rows):
     bronze = _bronze_slice(spark, rows)
-    return normalize_listings_bronze(bronze, RULES, currency="CAD")
+    return normalize_listings_bronze(
+        bronze, RULES, currency="CAD", country_name="Canada"
+    )
 
 
 def test_normalize_preserves_rows_and_column_order():
@@ -526,14 +587,11 @@ def test_normalize_parses_representative_values():
     silver = _normalize(_spark(), [_base_row()])
     row = silver.collect()[0].asDict()
 
-    # money, percent, boolean, date, decimal, int
+    # money, boolean, date, decimal, int
     assert row["price"] == Decimal("1234.50")
-    assert row["host_response_rate"] == 95
-    assert row["host_acceptance_rate"] == 100
     assert row["host_is_superhost"] is True
     assert row["host_has_profile_pic"] is True
     assert row["host_identity_verified"] is False
-    assert row["instant_bookable"] is False
     assert row["last_scraped"] == date(2026, 9, 14)
     assert row["first_review"] == date(2024, 1, 15)
     assert row["last_review"] == date(2026, 9, 10)
@@ -545,8 +603,18 @@ def test_normalize_parses_representative_values():
     assert row["accommodates"] == 4
     assert row["number_of_reviews"] == 57
 
-    # registry currency, never parsed from the source
+    # registry currency and country, never parsed from the source
     assert row["currency"] == "CAD"
+    assert row["country"] == "Canada"
+
+    # fuzzy amenity flags over the fixture amenities ('["Wifi", "Kitchen"]')
+    # and the null description
+    assert row["has_kitchen"] is True
+    assert row["has_wifi"] is True
+    assert row["has_hair_dryer"] is False
+    assert row["has_outdoor_space"] is False
+    assert row["has_laundry"] is False
+    assert row["pets_allowed"] is False
 
     # verbatim quote strings
     assert row["price_quote_total_price"] == "1234.5000000000001"
@@ -569,6 +637,78 @@ def test_normalize_parses_representative_values():
     assert row["normalization_issues"] == []
 
 
+def test_normalize_derives_amenity_flags_fuzzily():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [
+            _base_row(
+                id="fuzzy-flags",
+                amenities='["Cooking basics", "Hair dryer", "Pets allowed"]',
+                description="Enjoy the balcony and the shared laundry",
+            )
+        ],
+    )
+    row = silver.collect()[0].asDict()
+    assert row["has_kitchen"] is True  # 'cooking' fuzzy term, not 'kitchen'
+    assert row["has_hair_dryer"] is True
+    assert row["pets_allowed"] is True
+    assert row["has_outdoor_space"] is True  # balcony via description
+    assert row["has_laundry"] is True  # laundry via description
+    assert row["has_wifi"] is False
+
+
+def test_normalize_dishwasher_does_not_flag_laundry():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [
+            _base_row(
+                id="dishwasher-row",
+                amenities='["Dishwasher", "Kitchen", "Wifi"]',
+                description=None,
+            )
+        ],
+    )
+    row = silver.collect()[0].asDict()
+    assert row["has_laundry"] is False  # 'washer' inside 'Dishwasher' is a trap
+    assert row["has_kitchen"] is True
+
+
+def test_normalize_no_pets_phrasing_does_not_flag_pets():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [
+            _base_row(
+                id="no-pets-row",
+                amenities=None,
+                description="No pets allowed, no parties.",
+            )
+        ],
+    )
+    row = silver.collect()[0].asDict()
+    assert row["pets_allowed"] is False
+
+
+def test_normalize_amenity_flags_null_when_both_inputs_blank():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [_base_row(id="blank-flags", amenities=None, description=None)],
+    )
+    row = silver.collect()[0].asDict()
+    for name in (
+        "has_kitchen",
+        "has_hair_dryer",
+        "has_outdoor_space",
+        "has_laundry",
+        "has_wifi",
+        "pets_allowed",
+    ):
+        assert row[name] is None
+
+
 def test_normalize_malformed_values_become_null_and_issues():
     pytest.importorskip("pyspark")
     silver = _normalize(
@@ -576,7 +716,7 @@ def test_normalize_malformed_values_become_null_and_issues():
         [
             _base_row(
                 id="bad-row",
-                host_response_rate="abc%",
+                hosts_time_as_user_years="abc",
                 host_is_superhost="x",
                 latitude="9.9.9",
                 price="$",
@@ -588,7 +728,7 @@ def test_normalize_malformed_values_become_null_and_issues():
     row = silver.collect()[0].asDict()
 
     # failed parses become null; the batch does not crash
-    assert row["host_response_rate"] is None
+    assert row["hosts_time_as_user_years"] is None
     assert row["host_is_superhost"] is None
     assert row["latitude"] is None
     assert row["price"] is None
@@ -597,7 +737,7 @@ def test_normalize_malformed_values_become_null_and_issues():
 
     # issues name exactly the failed columns, in contract order
     assert row["normalization_issues"] == [
-        "host_response_rate",
+        "hosts_time_as_user_years",
         "host_is_superhost",
         "latitude",
         "price",
@@ -625,7 +765,7 @@ def test_normalize_blank_values_become_null_without_issues():
             _base_row(
                 id="blank-row",
                 price="",
-                host_response_rate="",
+                host_listings_count="",
                 host_is_superhost=" ",
                 last_review="",
                 latitude="   ",
@@ -636,7 +776,7 @@ def test_normalize_blank_values_become_null_without_issues():
     row = silver.collect()[0].asDict()
 
     assert row["price"] is None
-    assert row["host_response_rate"] is None
+    assert row["host_listings_count"] is None
     assert row["host_is_superhost"] is None
     assert row["last_review"] is None
     assert row["latitude"] is None
@@ -670,7 +810,7 @@ def test_normalize_rejects_missing_bronze_column():
     pytest.importorskip("pyspark")
     bronze = _bronze_slice(_spark(), [_base_row()]).drop("beds")
     with pytest.raises(ValueError, match="does not match"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD")
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_name="Canada")
 
 
 def test_normalize_rejects_unexpected_bronze_column():
@@ -679,7 +819,7 @@ def test_normalize_rejects_unexpected_bronze_column():
 
     bronze = _bronze_slice(_spark(), [_base_row()]).withColumn("future_col", F.lit("x"))
     with pytest.raises(ValueError, match="does not match"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD")
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_name="Canada")
 
 
 def test_normalize_requires_currency():
@@ -687,3 +827,10 @@ def test_normalize_requires_currency():
     bronze = _bronze_slice(_spark(), [_base_row()])
     with pytest.raises(ValueError, match="currency"):
         normalize_listings_bronze(bronze, RULES, currency="")
+
+
+def test_normalize_requires_country_name():
+    pytest.importorskip("pyspark")
+    bronze = _bronze_slice(_spark(), [_base_row()])
+    with pytest.raises(ValueError, match="country_name"):
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_name="")

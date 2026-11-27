@@ -84,7 +84,13 @@ def is_supported_column_type(column_type: Any) -> bool:
 SILVER_COLUMN_PARSE_VALUES = frozenset({"money", "percent"})
 # Derivation markers for columns with no Bronze source (registry
 # currency, the normalization-issues outcome).
-SILVER_COLUMN_FROM_VALUES = frozenset({"city_registry", "normalization"})
+SILVER_COLUMN_FROM_VALUES = frozenset(
+    {"city_registry", "normalization", "amenity_search"}
+)
+
+# Registry-derived Silver columns declare which city-registry field
+# they take their value from.
+SILVER_REGISTRY_KEY_VALUES = frozenset({"currency", "country_name"})
 
 
 def _is_nonempty_string(value: Any) -> bool:
@@ -393,6 +399,32 @@ def validate_silver_contract(
                 f"{column_label}: unknown 'from' value {entry['from']!r}; "
                 f"expected one of {sorted(SILVER_COLUMN_FROM_VALUES)}"
             )
+        elif (
+            has_from
+            and entry["from"] == "city_registry"
+            and entry.get("registry_key") not in SILVER_REGISTRY_KEY_VALUES
+        ):
+            errors.append(
+                f"{column_label}: city_registry columns must declare "
+                f"'registry_key' one of {sorted(SILVER_REGISTRY_KEY_VALUES)}"
+            )
+        elif has_from and entry["from"] == "amenity_search":
+            if entry.get("type") != "boolean":
+                errors.append(f"{column_label}: amenity_search columns must be boolean")
+            if not _is_nonempty_string_list(entry.get("patterns")):
+                errors.append(
+                    f"{column_label}: amenity_search columns need a non-empty "
+                    "'patterns' list of non-blank strings"
+                )
+            remove_patterns = entry.get("remove_patterns", [])
+            if not isinstance(remove_patterns, list) or any(
+                not isinstance(pattern, str) or not pattern.strip()
+                for pattern in remove_patterns
+            ):
+                errors.append(
+                    f"{column_label}: 'remove_patterns' must be a list of "
+                    "non-blank strings"
+                )
 
         if not is_supported_column_type(entry.get("type")):
             errors.append(f"{column_label}: unsupported type {entry.get('type')!r}")

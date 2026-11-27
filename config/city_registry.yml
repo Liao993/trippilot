@@ -13,6 +13,7 @@ cities:
     slug: toronto
     display_name: Toronto
     country_code: CA
+    country_name: Canada
     region: Ontario
     timezone: America/Toronto
     currency: CAD
