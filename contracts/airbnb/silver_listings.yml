@@ -1,5 +1,5 @@
 silver_listings:
-  version: 1
+  version: 2
   # F09.1: versioned contract for the normalized detailed-listings Silver
   # product. Bronze stays source-faithful (raw strings, row-quality
   # annotations, landed provenance); this contract is the analytical
@@ -58,10 +58,6 @@ silver_listings:
       source: description
       type: string
       nullable: true
-    - name: neighborhood_overview
-      source: neighborhood_overview
-      type: string
-      nullable: true
     - name: picture_url
       source: picture_url
       type: string
@@ -104,10 +100,6 @@ silver_listings:
       source: host_name
       type: string
       nullable: true
-    - name: host_since
-      source: host_since
-      type: date
-      nullable: true
     - name: hosts_time_as_user_years
       source: hosts_time_as_user_years
       type: int
@@ -132,44 +124,16 @@ silver_listings:
       source: host_about
       type: string
       nullable: true
-    - name: host_response_time
-      source: host_response_time
-      type: string
-      nullable: true
-    - name: host_response_rate
-      source: host_response_rate
-      type: int
-      parse: percent
-      nullable: true
-      note: percent 0-100; '%' stripped, never a fraction
-    - name: host_acceptance_rate
-      source: host_acceptance_rate
-      type: int
-      parse: percent
-      nullable: true
-      note: percent 0-100; '%' stripped, never a fraction
     - name: host_is_superhost
       source: host_is_superhost
       type: boolean
-      nullable: true
-    - name: host_thumbnail_url
-      source: host_thumbnail_url
-      type: string
       nullable: true
     - name: host_picture_url
       source: host_picture_url
       type: string
       nullable: true
-    - name: host_neighbourhood
-      source: host_neighbourhood
-      type: string
-      nullable: true
     - name: host_listings_count
       source: host_listings_count
-      type: int
-      nullable: true
-    - name: host_total_listings_count
-      source: host_total_listings_count
       type: int
       nullable: true
     - name: host_verifications
@@ -202,19 +166,10 @@ silver_listings:
       type: int
       nullable: true
     # --- location ---------------------------------------------------------
-    - name: neighbourhood
-      source: neighbourhood
-      type: string
-      nullable: true
     - name: neighbourhood_cleansed
       source: neighbourhood_cleansed
       type: string
       nullable: true
-    - name: neighbourhood_group_cleansed
-      source: neighbourhood_group_cleansed
-      type: string
-      nullable: true
-      note: empty in this snapshot but a real source field (populated in other cities); retained
     - name: latitude
       source: latitude
       type: decimal(9,6)
@@ -399,11 +354,6 @@ silver_listings:
       source: estimated_revenue_l365d
       type: int
       nullable: true
-    # --- bookability --------------------------------------------------------
-    - name: instant_bookable
-      source: instant_bookable
-      type: boolean
-      nullable: true
     # --- lineage (Bronze provenance) ---------------------------------------
     - name: source_name
       source: _source
@@ -477,6 +427,34 @@ silver_listings:
       reason: deprecated by the source and empty in every observed row; bathrooms_text carries the information
     - column: calendar_updated
       reason: deprecated by the source and empty in every observed row
+    # v2 (2026-11-27): operator-ordered slimming after the live null
+    # inspection of trippilot_dev.silver.airbnb_listings_silver
+    # (toronto / 2026-09-16, 22,050 rows): every column below was 100%
+    # null-or-empty in the real data, so the contract no longer projects
+    # it. Bronze keeps all source columns; re-adding any of these is a
+    # deliberate contract version bump.
+    - column: neighborhood_overview
+      reason: 100% null-or-empty in the live slice
+    - column: host_since
+      reason: 100% null in the live slice
+    - column: host_response_time
+      reason: 100% null-or-empty in the live slice
+    - column: host_response_rate
+      reason: 100% null in the live slice
+    - column: host_acceptance_rate
+      reason: 100% null in the live slice
+    - column: host_thumbnail_url
+      reason: 100% null-or-empty in the live slice
+    - column: host_neighbourhood
+      reason: 100% null-or-empty in the live slice
+    - column: host_total_listings_count
+      reason: 100% null in the live slice
+    - column: neighbourhood
+      reason: 100% null-or-empty in the live slice
+    - column: neighbourhood_group_cleansed
+      reason: 100% null-or-empty in the live slice (formerly retained as populated in other cities; removed by operator decision)
+    - column: instant_bookable
+      reason: 100% null in the live slice
   normalization:
     blank_policy: blank_to_null
     boolean_values:

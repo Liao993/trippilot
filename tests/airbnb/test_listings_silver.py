@@ -71,10 +71,12 @@ def test_silver_contract_file_is_the_expected_one():
     assert (ROOT / SILVER_CONTRACT_PATH).is_file()
 
 
-def test_contract_declares_100_unique_columns():
+def test_contract_declares_89_unique_columns():
+    # v2 slimming (2026-11-27): 11 all-null source columns moved to the
+    # documented exclusions; 100 - 11 = 89 contracted columns.
     names = [spec["name"] for spec in SPECS]
-    assert len(names) == 100
-    assert len(set(names)) == 100
+    assert len(names) == 89
+    assert len(set(names)) == 89
 
 
 def test_expected_bronze_columns_are_the_documented_100():
@@ -108,15 +110,28 @@ def test_contract_accounts_for_every_source_column():
         assert entry["reason"].strip()
 
 
-def test_deprecated_columns_are_the_only_exclusions():
+def test_exclusions_are_the_documented_dead_columns():
+    # v2: the two source-deprecated columns plus the 11 columns the
+    # live null inspection (2026-11-27) showed carry no data.
     assert {entry["column"] for entry in RULES["exclusions"]} == {
         "bathrooms",
         "calendar_updated",
+        "neighborhood_overview",
+        "host_since",
+        "host_response_time",
+        "host_response_rate",
+        "host_acceptance_rate",
+        "host_thumbnail_url",
+        "host_neighbourhood",
+        "host_total_listings_count",
+        "neighbourhood",
+        "neighbourhood_group_cleansed",
+        "instant_bookable",
     }
 
 
 def test_grain_primary_key_and_table():
-    assert RULES["version"] == 1
+    assert RULES["version"] == 2
     assert RULES["table"] == "trippilot_dev.silver.airbnb_listings_silver"
     assert RULES["input"] == "bronze_listings"
     assert RULES["write_policy"] == "replace_city_snapshot"
@@ -156,10 +171,9 @@ def test_price_policy_is_cad_decimal_with_money_parse():
     assert price["type"] == "decimal(10,2)"
     assert price["parse"] == "money"
 
-    for rate in ("host_response_rate", "host_acceptance_rate"):
-        spec = spec_by_name[rate]
-        assert spec["type"] == "int"
-        assert spec["parse"] == "percent"
+    # v2: no contracted column uses percent parsing any more - both
+    # percent columns were all-null and are documented exclusions.
+    assert not any(spec.get("parse") == "percent" for spec in SPECS)
 
     currency = spec_by_name["currency"]
     assert currency["from"] == "city_registry"
@@ -526,14 +540,11 @@ def test_normalize_parses_representative_values():
     silver = _normalize(_spark(), [_base_row()])
     row = silver.collect()[0].asDict()
 
-    # money, percent, boolean, date, decimal, int
+    # money, boolean, date, decimal, int
     assert row["price"] == Decimal("1234.50")
-    assert row["host_response_rate"] == 95
-    assert row["host_acceptance_rate"] == 100
     assert row["host_is_superhost"] is True
     assert row["host_has_profile_pic"] is True
     assert row["host_identity_verified"] is False
-    assert row["instant_bookable"] is False
     assert row["last_scraped"] == date(2026, 9, 14)
     assert row["first_review"] == date(2024, 1, 15)
     assert row["last_review"] == date(2026, 9, 10)
@@ -576,7 +587,7 @@ def test_normalize_malformed_values_become_null_and_issues():
         [
             _base_row(
                 id="bad-row",
-                host_response_rate="abc%",
+                hosts_time_as_user_years="abc",
                 host_is_superhost="x",
                 latitude="9.9.9",
                 price="$",
@@ -588,7 +599,7 @@ def test_normalize_malformed_values_become_null_and_issues():
     row = silver.collect()[0].asDict()
 
     # failed parses become null; the batch does not crash
-    assert row["host_response_rate"] is None
+    assert row["hosts_time_as_user_years"] is None
     assert row["host_is_superhost"] is None
     assert row["latitude"] is None
     assert row["price"] is None
@@ -597,7 +608,7 @@ def test_normalize_malformed_values_become_null_and_issues():
 
     # issues name exactly the failed columns, in contract order
     assert row["normalization_issues"] == [
-        "host_response_rate",
+        "hosts_time_as_user_years",
         "host_is_superhost",
         "latitude",
         "price",
@@ -625,7 +636,7 @@ def test_normalize_blank_values_become_null_without_issues():
             _base_row(
                 id="blank-row",
                 price="",
-                host_response_rate="",
+                host_listings_count="",
                 host_is_superhost=" ",
                 last_review="",
                 latitude="   ",
@@ -636,7 +647,7 @@ def test_normalize_blank_values_become_null_without_issues():
     row = silver.collect()[0].asDict()
 
     assert row["price"] is None
-    assert row["host_response_rate"] is None
+    assert row["host_listings_count"] is None
     assert row["host_is_superhost"] is None
     assert row["last_review"] is None
     assert row["latitude"] is None
