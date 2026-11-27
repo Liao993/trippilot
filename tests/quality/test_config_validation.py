@@ -814,6 +814,7 @@ SILVER_CONTRACT = {
             {
                 "name": "currency",
                 "from": "city_registry",
+                "registry_key": "currency",
                 "type": "string",
                 "nullable": False,
             },
@@ -822,6 +823,21 @@ SILVER_CONTRACT = {
                 "from": "normalization",
                 "type": "array<string>",
                 "nullable": False,
+            },
+            {
+                "name": "country",
+                "from": "city_registry",
+                "registry_key": "country_code",
+                "type": "string",
+                "nullable": False,
+            },
+            {
+                "name": "has_wifi",
+                "from": "amenity_search",
+                "type": "boolean",
+                "nullable": True,
+                "patterns": ["wifi", "wi-fi"],
+                "remove_patterns": [],
             },
         ],
         "lineage": {
@@ -938,6 +954,30 @@ def test_silver_unknown_from_value_is_reported():
     assert "'from'" in errors[0]
 
 
+def test_silver_city_registry_column_needs_registry_key():
+    content = _silver_content()
+    del content["silver_listings"]["columns"][9]["registry_key"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "registry_key" in errors[0]
+
+
+def test_silver_amenity_search_needs_patterns():
+    content = _silver_content()
+    del content["silver_listings"]["columns"][12]["patterns"]
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "patterns" in errors[0]
+
+
+def test_silver_amenity_search_must_be_boolean():
+    content = _silver_content()
+    content["silver_listings"]["columns"][12]["type"] = "string"
+    errors = validate_silver_contract(content)
+    assert len(errors) == 1
+    assert "boolean" in errors[0]
+
+
 def test_silver_unknown_parse_marker_is_reported():
     content = _silver_content()
     content["silver_listings"]["columns"][2]["parse"] = "fraction"
@@ -1045,5 +1085,7 @@ def test_supported_column_type_matrix():
 
 
 def test_silver_marker_sets_are_closed():
-    assert SILVER_COLUMN_FROM_VALUES == frozenset({"city_registry", "normalization"})
+    assert SILVER_COLUMN_FROM_VALUES == frozenset(
+        {"city_registry", "normalization", "amenity_search"}
+    )
     assert SILVER_COLUMN_PARSE_VALUES == frozenset({"money", "percent"})

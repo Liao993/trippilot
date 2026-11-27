@@ -205,9 +205,81 @@ silver_listings:
       note: nightly listed amount in the city's registered currency; '$' and thousands separators stripped; no FX conversion
     - name: currency
       from: city_registry
+      registry_key: currency
       type: string
       nullable: false
       note: registered city currency (toronto -> CAD); never parsed from the source, never converted
+    - name: country
+      from: city_registry
+      registry_key: country_code
+      type: string
+      nullable: false
+      note: registered city country, ISO 3166-1 alpha-2 (toronto -> CA); never parsed from the source
+    # --- derived amenity flags (v2 follow-up, operator-ordered 2026-11-27) --
+    # Fuzzy, recall-oriented search over the amenities JSON array and
+    # the free-text description (lowercased substring match). true when
+    # any pattern matches; false when at least one input was searched
+    # and nothing matched; null only when both inputs are null/blank.
+    # remove_patterns are stripped from the lowercased haystack first
+    # to avoid substring traps ('washer' inside 'Dishwasher', 'pets'
+    # inside 'no pets').
+    - name: has_kitchen
+      from: amenity_search
+      type: boolean
+      nullable: true
+      patterns:
+        - kitchen
+        - cooking
+        - cookware
+    - name: has_hair_dryer
+      from: amenity_search
+      type: boolean
+      nullable: true
+      patterns:
+        - hair dryer
+        - hairdryer
+    - name: has_outdoor_space
+      from: amenity_search
+      type: boolean
+      nullable: true
+      patterns:
+        - balcony
+        - backyard
+        - patio
+        - terrace
+    - name: has_laundry
+      from: amenity_search
+      type: boolean
+      nullable: true
+      patterns:
+        - laundry
+        - laundries
+        - washing machine
+        - washer
+      remove_patterns:
+        - dishwasher
+    - name: has_wifi
+      from: amenity_search
+      type: boolean
+      nullable: true
+      patterns:
+        - wifi
+        - wi-fi
+        - wi fi
+        - wireless
+    - name: pets_allowed
+      from: amenity_search
+      type: boolean
+      nullable: true
+      patterns:
+        - pets allowed
+        - pet allowed
+        - pet friendly
+        - pets welcome
+        - pets stay
+        - pets live
+      remove_patterns:
+        - no pets
     - name: price_quote_checkin_date
       source: price_quote_checkin_date
       type: date

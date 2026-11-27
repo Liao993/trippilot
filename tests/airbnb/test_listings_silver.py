@@ -71,12 +71,13 @@ def test_silver_contract_file_is_the_expected_one():
     assert (ROOT / SILVER_CONTRACT_PATH).is_file()
 
 
-def test_contract_declares_89_unique_columns():
+def test_contract_declares_96_unique_columns():
     # v2 slimming (2026-11-27): 11 all-null source columns moved to the
-    # documented exclusions; 100 - 11 = 89 contracted columns.
+    # documented exclusions (100 - 11 = 89); the v2 follow-up added the
+    # registry-derived country and six amenity flags (89 + 7 = 96).
     names = [spec["name"] for spec in SPECS]
-    assert len(names) == 89
-    assert len(set(names)) == 89
+    assert len(names) == 96
+    assert len(set(names)) == 96
 
 
 def test_expected_bronze_columns_are_the_documented_100():
@@ -177,7 +178,41 @@ def test_price_policy_is_cad_decimal_with_money_parse():
 
     currency = spec_by_name["currency"]
     assert currency["from"] == "city_registry"
+    assert currency["registry_key"] == "currency"
     assert currency["nullable"] is False
+
+    country = spec_by_name["country"]
+    assert country["from"] == "city_registry"
+    assert country["registry_key"] == "country_code"
+    assert country["type"] == "string"
+    assert country["nullable"] is False
+
+
+def test_amenity_flag_columns_are_contract_driven():
+    spec_by_name = {spec["name"]: spec for spec in SPECS}
+    expected_patterns = {
+        "has_kitchen": {"kitchen", "cooking", "cookware"},
+        "has_hair_dryer": {"hair dryer", "hairdryer"},
+        "has_outdoor_space": {"balcony", "backyard", "patio", "terrace"},
+        "has_laundry": {"laundry", "laundries", "washing machine", "washer"},
+        "has_wifi": {"wifi", "wi-fi", "wi fi", "wireless"},
+        "pets_allowed": {
+            "pets allowed",
+            "pet allowed",
+            "pet friendly",
+            "pets welcome",
+            "pets stay",
+            "pets live",
+        },
+    }
+    for name, patterns in expected_patterns.items():
+        spec = spec_by_name[name]
+        assert spec["from"] == "amenity_search"
+        assert spec["type"] == "boolean"
+        assert set(spec["patterns"]) == patterns
+    # substring traps are stripped before matching
+    assert set(spec_by_name["has_laundry"]["remove_patterns"]) == {"dishwasher"}
+    assert set(spec_by_name["pets_allowed"]["remove_patterns"]) == {"no pets"}
 
 
 def test_quote_fields_stay_verbatim_strings():
@@ -191,11 +226,21 @@ def test_quote_fields_stay_verbatim_strings():
         assert "parse" not in spec_by_name[name]
 
 
-def test_issues_column_is_the_only_normalization_derivation():
+def test_derived_columns_are_the_documented_v2_set():
+    # v2: the registry-derived currency and country, the
+    # normalization-issues outcome, and the six fuzzy amenity flags
+    # are the only columns with no Bronze source.
     derived = [spec for spec in SPECS if "from" in spec]
     assert {spec["name"] for spec in derived} == {
         "currency",
+        "country",
         "normalization_issues",
+        "has_kitchen",
+        "has_hair_dryer",
+        "has_outdoor_space",
+        "has_laundry",
+        "has_wifi",
+        "pets_allowed",
     }
     issues = next(spec for spec in derived if spec["name"] == "normalization_issues")
     assert issues["type"] == "array<string>"
@@ -489,7 +534,7 @@ def _base_row(**overrides):
 
 def _normalize(spark, rows):
     bronze = _bronze_slice(spark, rows)
-    return normalize_listings_bronze(bronze, RULES, currency="CAD")
+    return normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="CA")
 
 
 def test_normalize_preserves_rows_and_column_order():
@@ -556,8 +601,18 @@ def test_normalize_parses_representative_values():
     assert row["accommodates"] == 4
     assert row["number_of_reviews"] == 57
 
-    # registry currency, never parsed from the source
+    # registry currency and country, never parsed from the source
     assert row["currency"] == "CAD"
+    assert row["country"] == "CA"
+
+    # fuzzy amenity flags over the fixture amenities ('["Wifi", "Kitchen"]')
+    # and the null description
+    assert row["has_kitchen"] is True
+    assert row["has_wifi"] is True
+    assert row["has_hair_dryer"] is False
+    assert row["has_outdoor_space"] is False
+    assert row["has_laundry"] is False
+    assert row["pets_allowed"] is False
 
     # verbatim quote strings
     assert row["price_quote_total_price"] == "1234.5000000000001"
@@ -578,6 +633,78 @@ def test_normalize_parses_representative_values():
     assert row["scrape_source"] == "previous scrape"
 
     assert row["normalization_issues"] == []
+
+
+def test_normalize_derives_amenity_flags_fuzzily():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [
+            _base_row(
+                id="fuzzy-flags",
+                amenities='["Cooking basics", "Hair dryer", "Pets allowed"]',
+                description="Enjoy the balcony and the shared laundry",
+            )
+        ],
+    )
+    row = silver.collect()[0].asDict()
+    assert row["has_kitchen"] is True  # 'cooking' fuzzy term, not 'kitchen'
+    assert row["has_hair_dryer"] is True
+    assert row["pets_allowed"] is True
+    assert row["has_outdoor_space"] is True  # balcony via description
+    assert row["has_laundry"] is True  # laundry via description
+    assert row["has_wifi"] is False
+
+
+def test_normalize_dishwasher_does_not_flag_laundry():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [
+            _base_row(
+                id="dishwasher-row",
+                amenities='["Dishwasher", "Kitchen", "Wifi"]',
+                description=None,
+            )
+        ],
+    )
+    row = silver.collect()[0].asDict()
+    assert row["has_laundry"] is False  # 'washer' inside 'Dishwasher' is a trap
+    assert row["has_kitchen"] is True
+
+
+def test_normalize_no_pets_phrasing_does_not_flag_pets():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [
+            _base_row(
+                id="no-pets-row",
+                amenities=None,
+                description="No pets allowed, no parties.",
+            )
+        ],
+    )
+    row = silver.collect()[0].asDict()
+    assert row["pets_allowed"] is False
+
+
+def test_normalize_amenity_flags_null_when_both_inputs_blank():
+    pytest.importorskip("pyspark")
+    silver = _normalize(
+        _spark(),
+        [_base_row(id="blank-flags", amenities=None, description=None)],
+    )
+    row = silver.collect()[0].asDict()
+    for name in (
+        "has_kitchen",
+        "has_hair_dryer",
+        "has_outdoor_space",
+        "has_laundry",
+        "has_wifi",
+        "pets_allowed",
+    ):
+        assert row[name] is None
 
 
 def test_normalize_malformed_values_become_null_and_issues():
@@ -681,7 +808,7 @@ def test_normalize_rejects_missing_bronze_column():
     pytest.importorskip("pyspark")
     bronze = _bronze_slice(_spark(), [_base_row()]).drop("beds")
     with pytest.raises(ValueError, match="does not match"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD")
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="CA")
 
 
 def test_normalize_rejects_unexpected_bronze_column():
@@ -690,7 +817,7 @@ def test_normalize_rejects_unexpected_bronze_column():
 
     bronze = _bronze_slice(_spark(), [_base_row()]).withColumn("future_col", F.lit("x"))
     with pytest.raises(ValueError, match="does not match"):
-        normalize_listings_bronze(bronze, RULES, currency="CAD")
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="CA")
 
 
 def test_normalize_requires_currency():
@@ -698,3 +825,10 @@ def test_normalize_requires_currency():
     bronze = _bronze_slice(_spark(), [_base_row()])
     with pytest.raises(ValueError, match="currency"):
         normalize_listings_bronze(bronze, RULES, currency="")
+
+
+def test_normalize_requires_country_code():
+    pytest.importorskip("pyspark")
+    bronze = _bronze_slice(_spark(), [_base_row()])
+    with pytest.raises(ValueError, match="country_code"):
+        normalize_listings_bronze(bronze, RULES, currency="CAD", country_code="")
